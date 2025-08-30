@@ -1,0 +1,811 @@
+// Portfolio Management Tool Functions - Designed for LangGraph Integration
+window.PortfolioManager = {
+    // Portfolio data storage
+    portfolio: [],
+    availableTags: [], // Track available tags for dynamic columns
+    
+    // Initialize portfolio from localStorage
+    initialize() {
+        const saved = localStorage.getItem('portfolio');
+        if (saved) {
+            const savedData = JSON.parse(saved);
+            this.portfolio = savedData.portfolio || savedData; // Handle both old and new formats
+            this.availableTags = savedData.tags || []; // Load available tags
+        }
+        this.updateUI();
+        this.updateWeightSummary();
+    },
+    
+    // Save portfolio to localStorage
+    savePortfolio() {
+        const portfolioData = {
+            portfolio: this.portfolio,
+            tags: this.availableTags
+        };
+        localStorage.setItem('portfolio', JSON.stringify(portfolioData));
+    },
+    
+    // Get current total weight
+    getTotalWeight() {
+        return this.portfolio.reduce((sum, item) => sum + item.weight, 0);
+    },
+    
+    // Get remaining weight
+    getRemainingWeight() {
+        return 100 - this.getTotalWeight();
+    },
+    
+    // Add new ticker to portfolio
+    addTicker(ticker, weight) {
+        // Validate inputs
+        if (!ticker || !weight || weight <= 0 || weight > 100) {
+            throw new Error('Invalid ticker or weight values');
+        }
+        
+        const tickerUpper = ticker.trim().toUpperCase();
+        const weightNum = parseFloat(weight);
+        
+        // Check if ticker already exists
+        if (this.portfolio.some(item => item.ticker === tickerUpper)) {
+            throw new Error(`Ticker ${tickerUpper} already exists in portfolio`);
+        }
+        
+        // Check if adding would exceed 100%
+        const totalWeight = this.getTotalWeight();
+        if (totalWeight + weightNum > 100) {
+            throw new Error(`Cannot add ${weightNum}% - would exceed 100% limit. Current total: ${totalWeight.toFixed(2)}%`);
+        }
+        
+        // Add ticker
+        this.portfolio.push({ ticker: tickerUpper, weight: weightNum });
+        this.savePortfolio();
+        this.updateUI();
+        this.updateWeightSummary();
+        
+        return {
+            success: true,
+            message: `${tickerUpper} added to portfolio with ${weightNum}% weight`,
+            portfolio: this.portfolio
+        };
+    },
+    
+    // Edit existing ticker
+    editTicker(index, newTicker, newWeight) {
+        // Validate inputs
+        if (index < 0 || index >= this.portfolio.length) {
+            throw new Error('Invalid ticker index');
+        }
+        
+        if (!newTicker || !newWeight || newWeight <= 0 || newWeight > 100) {
+            throw new Error('Invalid ticker or weight values');
+        }
+        
+        const tickerUpper = newTicker.trim().toUpperCase();
+        const weightNum = parseFloat(newWeight);
+        
+        // Check if new ticker already exists (excluding current item)
+        if (this.portfolio.some((item, idx) => idx !== index && item.ticker === tickerUpper)) {
+            throw new Error(`Ticker ${tickerUpper} already exists in portfolio`);
+        }
+        
+        // Check if new weight would exceed 100%
+        const totalWeight = this.portfolio.reduce((sum, item, idx) => 
+            idx !== index ? sum + item.weight : sum, 0);
+        
+        if (totalWeight + weightNum > 100) {
+            throw new Error(`Cannot set weight to ${weightNum}% - would exceed 100% limit. Current total without this ticker: ${totalWeight.toFixed(2)}%`);
+        }
+        
+        // Update ticker
+        const oldTicker = this.portfolio[index].ticker;
+        this.portfolio[index] = { ticker: tickerUpper, weight: weightNum };
+        this.savePortfolio();
+        this.updateUI();
+        this.updateWeightSummary();
+        
+        return {
+            success: true,
+            message: `${oldTicker} updated to ${tickerUpper} with ${weightNum}% weight`,
+            portfolio: this.portfolio
+        };
+    },
+    
+    // Delete ticker from portfolio
+    deleteTicker(index) {
+        if (index < 0 || index >= this.portfolio.length) {
+            throw new Error('Invalid ticker index');
+        }
+        
+        const ticker = this.portfolio[index].ticker;
+        this.portfolio.splice(index, 1);
+        this.savePortfolio();
+        this.updateUI();
+        this.updateWeightSummary();
+        
+        return {
+            success: true,
+            message: `${ticker} removed from portfolio`,
+            portfolio: this.portfolio
+        };
+    },
+    
+    // Get portfolio summary
+    getPortfolioSummary() {
+        const totalWeight = this.getTotalWeight();
+        const remainingWeight = this.getRemainingWeight();
+        
+        return {
+            tickerCount: this.portfolio.length,
+            totalWeight: totalWeight.toFixed(2),
+            remainingWeight: remainingWeight.toFixed(2),
+            isFullyAllocated: totalWeight === 100,
+            isOverAllocated: totalWeight > 100,
+            tickers: this.portfolio.map(item => ({
+                symbol: item.ticker,
+                weight: item.weight.toFixed(2)
+            }))
+        };
+    },
+    
+    // Update UI components
+    updateUI() {
+        const portfolioTable = document.getElementById('portfolioTable');
+        const portfolioTableBody = document.getElementById('portfolioTableBody');
+        const emptyState = document.getElementById('emptyState');
+        const tableWrapper = document.querySelector('.table-wrapper');
+        
+        if (this.portfolio.length === 0) {
+            portfolioTable.classList.remove('show');
+            emptyState.style.display = 'flex';
+            if (tableWrapper) tableWrapper.style.display = 'none';
+        } else {
+            portfolioTable.classList.add('show');
+            emptyState.style.display = 'none';
+            if (tableWrapper) tableWrapper.style.display = 'block';
+            this.renderPortfolioTable();
+        }
+        this.validateInputs();
+    },
+    
+    // Update weight summary display
+    updateWeightSummary() {
+        const weightSummary = document.getElementById('weightSummary');
+        if (!weightSummary) return;
+        
+        const total = this.getTotalWeight();
+        const remaining = this.getRemainingWeight();
+        
+        const totalElement = weightSummary.querySelector('.weight-total strong');
+        const remainingElement = weightSummary.querySelector('.weight-remaining strong');
+        
+        if (totalElement && remainingElement) {
+            totalElement.textContent = `${total.toFixed(2)}%`;
+            remainingElement.textContent = `${remaining.toFixed(2)}%`;
+            
+            // Update colors based on weight status
+            if (total > 100) {
+                totalElement.style.color = '#dc3545';
+            } else if (total === 100) {
+                totalElement.style.color = '#28a745';
+            } else {
+                totalElement.style.color = '#007bff';
+            }
+            
+            if (remaining < 0) {
+                remainingElement.style.color = '#dc3545';
+            } else if (remaining === 0) {
+                remainingElement.style.color = '#28a745';
+            } else {
+                remainingElement.style.color = '#28a745';
+            }
+        }
+    },
+    
+    // Render portfolio table
+    renderPortfolioTable() {
+        const portfolioTableBody = document.getElementById('portfolioTableBody');
+        if (!portfolioTableBody) return;
+        
+        // Update table header with dynamic columns
+        this.updateTableHeader();
+        
+        portfolioTableBody.innerHTML = '';
+        
+        this.portfolio.forEach((item, index) => {
+            const row = document.createElement('tr');
+            
+            // Build row content with dynamic tag columns
+            let rowContent = `
+                <td><strong>${item.ticker}</strong></td>
+                <td>${item.weight.toFixed(2)}%</td>
+            `;
+            
+            // Add tag columns if they exist
+            if (this.availableTags && this.availableTags.length > 0) {
+                this.availableTags.forEach(tag => {
+                    const tagValue = item[tag] || 'N/A';
+                    rowContent += `<td>${tagValue}</td>`;
+                });
+            }
+            
+            // Add action buttons
+            rowContent += `
+                <td class="row-actions">
+                    <button class="action-btn edit-btn" onclick="PortfolioManager.openEditModal(${index})" title="Edit ${item.ticker}">✏️</button>
+                    <button class="action-btn delete-btn" onclick="PortfolioManager.deleteTickerWithConfirmation(${index})" title="Delete ${item.ticker}">🗑️</button>
+                </td>
+            `;
+            
+            row.innerHTML = rowContent;
+            portfolioTableBody.appendChild(row);
+        });
+    },
+    
+    // Update table header with dynamic tag columns
+    updateTableHeader() {
+        const headerRow = document.getElementById('portfolioTableHeader');
+        if (!headerRow) return;
+        
+        // Keep Symbol and Weight columns
+        let headerContent = `
+            <th>Symbol</th>
+            <th>Weight (%)</th>
+        `;
+        
+        // Add dynamic tag columns
+        if (this.availableTags && this.availableTags.length > 0) {
+            this.availableTags.forEach(tag => {
+                const tagDisplayName = tag.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
+                headerContent += `<th>${tagDisplayName}</th>`;
+            });
+        }
+        
+        // Add Actions column
+        headerContent += `<th>Actions</th>`;
+        
+        headerRow.innerHTML = headerContent;
+    },
+    
+    // Validate inputs and enable/disable add button
+    validateInputs() {
+        const tickerInput = document.getElementById('tickerInput');
+        const weightInput = document.getElementById('weightInput');
+        const addTickerBtn = document.getElementById('addTickerBtn');
+        
+        if (!tickerInput || !weightInput || !addTickerBtn) return;
+        
+        const ticker = tickerInput.value.trim().toUpperCase();
+        const weight = parseFloat(weightInput.value);
+        const totalWeight = this.getTotalWeight();
+        
+        const isValid = ticker.length > 0 && 
+                       ticker.length <= 10 && 
+                       !isNaN(weight) && 
+                       weight > 0 && 
+                       weight <= 100 &&
+                       (totalWeight + weight) <= 100 &&
+                       !this.portfolio.some(item => item.ticker === ticker);
+        
+        addTickerBtn.disabled = !isValid;
+        
+        // Update button appearance based on validation
+        if (isValid) {
+            addTickerBtn.style.background = 'linear-gradient(135deg, #28a745 0%, #20c997 100%)';
+            addTickerBtn.style.boxShadow = '0 4px 12px rgba(40, 167, 69, 0.3)';
+        } else {
+            addTickerBtn.style.background = 'linear-gradient(135deg, #6c757d 0%, #5a6268 100%)';
+            addTickerBtn.style.boxShadow = 'none';
+        }
+    },
+    
+    // Open edit modal
+    openEditModal(index) {
+        if (index < 0 || index >= this.portfolio.length) return;
+        
+        const editModal = document.getElementById('editModal');
+        const editTickerInput = document.getElementById('editTickerInput');
+        const editWeightInput = document.getElementById('editWeightInput');
+        
+        if (!editModal || !editTickerInput || !editWeightInput) return;
+        
+        const item = this.portfolio[index];
+        editTickerInput.value = item.ticker;
+        editWeightInput.value = item.weight;
+        
+        // Store editing index
+        editModal.dataset.editingIndex = index;
+        editModal.classList.add('show');
+        editTickerInput.focus();
+    },
+    
+    // Save edit changes
+    saveEditChanges() {
+        const editModal = document.getElementById('editModal');
+        const editTickerInput = document.getElementById('editTickerInput');
+        const editWeightInput = document.getElementById('editWeightInput');
+        
+        if (!editModal || !editTickerInput || !editWeightInput) return;
+        
+        const index = parseInt(editModal.dataset.editingIndex);
+        const ticker = editTickerInput.value.trim();
+        const weight = parseFloat(editWeightInput.value);
+        
+        try {
+            const result = this.editTicker(index, ticker, weight);
+            this.closeEditModal();
+            this.showNotification(result.message, 'success');
+        } catch (error) {
+            this.showNotification(error.message, 'error');
+        }
+    },
+    
+    // Close edit modal
+    closeEditModal() {
+        const editModal = document.getElementById('editModal');
+        const editTickerInput = document.getElementById('editTickerInput');
+        const editWeightInput = document.getElementById('editWeightInput');
+        
+        if (editModal) {
+            editModal.classList.remove('show');
+            delete editModal.dataset.editingIndex;
+        }
+        
+        if (editTickerInput) editTickerInput.value = '';
+        if (editWeightInput) editWeightInput.value = '';
+    },
+    
+    // Delete ticker with confirmation
+    deleteTickerWithConfirmation(index) {
+        if (index < 0 || index >= this.portfolio.length) return;
+        
+        const ticker = this.portfolio[index].ticker;
+        if (confirm(`Are you sure you want to remove ${ticker} from your portfolio?`)) {
+            try {
+                const result = this.deleteTicker(index);
+                this.showNotification(result.message, 'success');
+            } catch (error) {
+                this.showNotification(error.message, 'error');
+            }
+        }
+    },
+    
+    // Show notification
+    showNotification(message, type = 'info') {
+        // Create notification element
+        const notification = document.createElement('div');
+        notification.className = `notification notification-${type}`;
+        notification.textContent = message;
+        
+        // Add styles
+        notification.style.cssText = `
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            padding: 16px 24px;
+            border-radius: 12px;
+            color: white;
+            font-weight: 500;
+            z-index: 1001;
+            animation: slideInRight 0.3s ease-out;
+            max-width: 350px;
+            word-wrap: break-word;
+            box-shadow: 0 8px 25px rgba(0, 0, 0, 0.15);
+        `;
+
+        // Set background color based on type
+        switch (type) {
+            case 'success':
+                notification.style.background = 'linear-gradient(135deg, #28a745 0%, #20c997 100%)';
+                break;
+            case 'error':
+                notification.style.background = 'linear-gradient(135deg, #dc3545 0%, #c82333 100%)';
+                break;
+            case 'warning':
+                notification.style.background = 'linear-gradient(135deg, #ffc107 0%, #ffb300 100%)';
+                notification.style.color = '#212529';
+                break;
+            default:
+                notification.style.background = 'linear-gradient(135deg, #007bff 0%, #0056b3 100%)';
+        }
+
+        // Add animation keyframes
+        if (!document.querySelector('#notification-styles')) {
+            const style = document.createElement('style');
+            style.id = 'notification-styles';
+            style.textContent = `
+                @keyframes slideInRight {
+                    from { transform: translateX(100%); opacity: 0; }
+                    to { transform: translateX(0); opacity: 1; }
+                }
+                @keyframes slideOutRight {
+                    from { transform: translateX(0); opacity: 1; }
+                    to { transform: translateX(100%); opacity: 0; }
+                }
+            `;
+            document.head.appendChild(style);
+        }
+
+        // Add to DOM
+        document.body.appendChild(notification);
+
+        // Remove after 4 seconds
+        setTimeout(() => {
+            notification.style.animation = 'slideOutRight 0.3s ease-in';
+            setTimeout(() => {
+                if (notification.parentNode) {
+                    notification.parentNode.removeChild(notification);
+                }
+            }, 300);
+        }, 4000);
+    },
+
+    // Update portfolio from AI response
+    updatePortfolioFromAI(aiResponse) {
+        // Parse the AI response to extract portfolio changes
+        const responseText = aiResponse.toLowerCase();
+        console.log('🔍 Parsing AI response:', aiResponse);
+        console.log('🔍 Response text (lowercase):', responseText);
+        
+        let changesMade = false;
+        
+        // Check if the AI mentioned adding a ticker
+        if (responseText.includes('added') || responseText.includes('add')) {
+            // Extract ticker and weight from AI response - multiple patterns
+            const patterns = [
+                /([a-z]{1,5}):\s*(\d+(?:\.\d+)?)%/i,  // TICKER: WEIGHT%
+                /added\s+([a-z]{1,5})\s+with\s+(\d+(?:\.\d+)?)%/i,  // added TICKER with WEIGHT%
+                /add\s+([a-z]{1,5})\s+(\d+(?:\.\d+)?)%/i,  // add TICKER WEIGHT%
+                /added\s+([a-z]{1,5})\s+at\s+(\d+(?:\.\d+)?)%/i,  // added TICKER at WEIGHT%
+                /([a-z]{1,5})\s+(\d+(?:\.\d+)?)%/i  // TICKER WEIGHT% (fallback)
+            ];
+            
+            for (const pattern of patterns) {
+                const match = responseText.match(pattern);
+                if (match) {
+                    const ticker = match[1].toUpperCase();
+                    const weight = parseFloat(match[2]);
+                    console.log('✅ Found ticker to add:', ticker, weight, 'using pattern:', pattern);
+                    
+                    // Add to portfolio if not already present
+                    if (!this.portfolio.some(item => item.ticker === ticker)) {
+                        this.addTicker(ticker, weight);
+                        this.showNotification(`Added ${ticker} with ${weight}% weight from AI`, 'success');
+                        changesMade = true;
+                        break;
+                    } else {
+                        console.log('⚠️ Ticker already exists:', ticker);
+                    }
+                }
+            }
+        }
+        
+        // Check if the AI mentioned modifying a ticker
+        if (responseText.includes('modified') || responseText.includes('change') || responseText.includes('modify') || responseText.includes('remains')) {
+            const patterns = [
+                /([a-z]{1,5}):\s*(\d+(?:\.\d+)?)%/i,  // TICKER: WEIGHT%
+                /modified\s+([a-z]{1,5})\s+to\s+(\d+(?:\.\d+)?)%/i,  // modified TICKER to WEIGHT%
+                /change\s+([a-z]{1,5})\s+to\s+(\d+(?:\.\d+)?)%/i,  // change TICKER to WEIGHT%
+                /([a-z]{1,5})\s+remains\s+(\d+(?:\.\d+)?)%/i,  // TICKER remains WEIGHT%
+                /([a-z]{1,5})\s+(\d+(?:\.\d+)?)%/i  // TICKER WEIGHT% (fallback)
+            ];
+            
+            for (const pattern of patterns) {
+                const match = responseText.match(pattern);
+                if (match) {
+                    const ticker = match[1].toUpperCase();
+                    const newWeight = parseFloat(match[2]);
+                    console.log('✅ Found ticker to modify:', ticker, 'to', newWeight, 'using pattern:', pattern);
+                    
+                    const index = this.portfolio.findIndex(item => item.ticker === ticker);
+                    if (index !== -1) {
+                        this.editTicker(index, ticker, newWeight);
+                        this.showNotification(`Modified ${ticker} weight to ${newWeight}% as requested by AI`, 'success');
+                        changesMade = true;
+                        break;
+                    } else {
+                        console.log('⚠️ Ticker not found for modification:', ticker);
+                    }
+                }
+            }
+        }
+        
+        // Check if the AI mentioned removing a ticker
+        if (responseText.includes('removed') || responseText.includes('remove') || responseText.includes('was not removed')) {
+            const patterns = [
+                /removed\s+([a-z]{1,5})/i,  // removed TICKER
+                /([a-z]{1,5})\s+was\s+not\s+removed/i,  // TICKER was not removed
+                /([a-z]{1,5})\s+remains/i,  // TICKER remains
+                /([a-z]{1,5})\s+not\s+removed/i  // TICKER not removed
+            ];
+            
+            for (const pattern of patterns) {
+                const match = responseText.match(pattern);
+                if (match) {
+                    const ticker = match[1].toUpperCase();
+                    console.log('✅ Found ticker for removal check:', ticker, 'using pattern:', pattern);
+                    
+                    // Check if this is a "was not removed" case - we should remove it manually
+                    if (responseText.includes('was not removed') || responseText.includes('not removed')) {
+                        const index = this.portfolio.findIndex(item => item.ticker === ticker);
+                        if (index !== -1) {
+                            this.deleteTicker(index);
+                            this.showNotification(`Removed ${ticker} from portfolio as requested by AI`, 'success');
+                            changesMade = true;
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+        
+        if (!changesMade) {
+            console.log('⚠️ No portfolio changes detected in AI response');
+        }
+        
+        // Refresh the display
+        this.updateUI();
+        this.updateWeightSummary();
+    },
+
+    // Update portfolio from AI structured data (including tags)
+    updatePortfolioFromStructuredData(structuredData) {
+        console.log('🔍 Updating portfolio from structured data:', structuredData);
+        let changesMade = false;
+        
+        if (!structuredData || !structuredData.tickers) {
+            console.log('⚠️ No valid portfolio data received');
+            return;
+        }
+        
+        // Handle portfolio with tags - preserve existing tags and merge new ones
+        if (structuredData.tickers && Array.isArray(structuredData.tickers)) {
+            // Create a map of existing tickers with their tags
+            const existingTickers = new Map();
+            this.portfolio.forEach(item => {
+                existingTickers.set(item.ticker, item);
+            });
+            
+            // Update portfolio with new ticker data (including tags)
+            this.portfolio = structuredData.tickers.map(ticker => {
+                const symbol = ticker.symbol || ticker.ticker;
+                const newTickerData = {
+                    ticker: symbol,
+                    weight: parseFloat(ticker.weight)
+                };
+                
+                // Merge with existing tags if this ticker already exists
+                const existingTicker = existingTickers.get(symbol);
+                if (existingTicker) {
+                    // Preserve all existing tags
+                    Object.keys(existingTicker).forEach(key => {
+                        if (key !== 'ticker' && key !== 'weight') {
+                            newTickerData[key] = existingTicker[key];
+                        }
+                    });
+                    console.log(`🔍 Preserved existing tags for ${symbol}:`, existingTicker);
+                }
+                
+                // Add new tags from the AI response
+                Object.keys(ticker).forEach(key => {
+                    if (key !== 'symbol' && key !== 'ticker' && key !== 'weight') {
+                        newTickerData[key] = ticker[key];
+                        console.log(`🔍 Added new tag for ${symbol}: ${key} = ${ticker[key]}`);
+                    }
+                });
+                
+                return newTickerData;
+            });
+            
+            // Update available tags by collecting all unique tag keys
+            const allTags = new Set();
+            this.portfolio.forEach(ticker => {
+                Object.keys(ticker).forEach(key => {
+                    if (key !== 'ticker' && key !== 'weight') {
+                        allTags.add(key);
+                    }
+                });
+            });
+            this.availableTags = Array.from(allTags);
+            console.log('🔍 Updated available tags:', this.availableTags);
+            
+            changesMade = true;
+        }
+        
+        // Update UI and show notification
+        this.updateUI();
+        this.updateWeightSummary();
+        
+        if (structuredData.changes && structuredData.changes.length > 0) {
+            const changeMessage = structuredData.changes.join(', ');
+            this.showNotification(`Portfolio updated: ${changeMessage}`, 'success');
+        } else if (changesMade) {
+            this.showNotification('Portfolio updated from AI response', 'success');
+        }
+        
+        console.log('✅ Portfolio updated from structured data with tag preservation');
+    },
+};
+
+// Chat Manager for LangGraph AI Integration
+window.ChatManager = {
+    // Add a message to the chat
+    addMessage(content, isUser = false) {
+        const chatMessages = document.getElementById('chatMessages');
+        if (!chatMessages) return;
+        
+        const messageDiv = document.createElement('div');
+        messageDiv.className = `message ${isUser ? 'user-message' : 'bot-message'}`;
+        
+        const messageContent = document.createElement('div');
+        messageContent.className = 'message-content';
+        messageContent.textContent = content;
+        
+        messageDiv.appendChild(messageContent);
+        chatMessages.appendChild(messageDiv);
+        
+        // Scroll to bottom
+        chatMessages.scrollTop = chatMessages.scrollHeight;
+    },
+
+    // Send a message and get AI response
+    async sendMessage(message) {
+        if (!message.trim()) return;
+        
+        // Add user message
+        this.addMessage(message, true);
+        
+        // Get current portfolio data
+        const portfolio = window.PortfolioManager.getPortfolioSummary();
+        
+        try {
+            // Show loading indicator
+            const loadingDiv = document.createElement('div');
+            loadingDiv.className = 'message bot-message loading';
+            loadingDiv.innerHTML = '<div class="message-content">🤔 Thinking...</div>';
+            document.getElementById('chatMessages').appendChild(loadingDiv);
+            
+            // Send to LangGraph backend
+            const response = await fetch('/api/chat', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    message: message,
+                    portfolio: portfolio
+                })
+            });
+            
+            if (!response.ok) {
+                throw new Error(`HTTP error! status: ${response.status}`);
+            }
+            
+            const data = await response.json();
+            
+            // Remove loading indicator
+            loadingDiv.remove();
+            
+            if (data.success) {
+                // Add AI response
+                this.addMessage(data.response, false);
+                
+                // Update portfolio with structured data from backend
+                if (data.portfolio) {
+                    window.PortfolioManager.updatePortfolioFromStructuredData(data.portfolio);
+                }
+                
+                // Log changes for debugging
+                if (data.changes) {
+                    console.log('🔍 AI Changes:', data.changes);
+                }
+            } else {
+                this.addMessage("Sorry, I encountered an error processing your request. Please try again.", false);
+            }
+            
+        } catch (error) {
+            console.error('Error sending message:', error);
+            
+            // Remove loading indicator
+            const loadingDiv = document.querySelector('.loading');
+            if (loadingDiv) loadingDiv.remove();
+            
+            // Provide more specific error messages
+            let errorMessage = "Sorry, I encountered an error processing your request.";
+            
+            if (error.name === 'TypeError' && error.message.includes('fetch')) {
+                errorMessage = "Network error: Please check your internet connection and try again.";
+            } else if (error.message.includes('HTTP error')) {
+                errorMessage = `Server error: ${error.message}. Please try again later.`;
+            } else {
+                errorMessage = `Error: ${error.message}. Please try again.`;
+            }
+            
+            this.addMessage(errorMessage, false);
+        }
+    },
+
+    // Initialize chat with welcome message
+    initialize() {
+        this.addMessage("Hello! I'm your AI-powered portfolio assistant. I can help you manage your portfolio, add/remove tickers, and provide insights. How can I help you today?", false);
+    }
+};
+
+// Initialize the application
+document.addEventListener('DOMContentLoaded', function() {
+    // Initialize portfolio manager
+    PortfolioManager.initialize();
+    
+    // Initialize chat manager
+    ChatManager.initialize();
+    
+    // Setup event listeners
+    setupEventListeners();
+    
+    // Focus on chat input
+    const messageInput = document.getElementById('messageInput');
+    if (messageInput) messageInput.focus();
+});
+
+// Setup all event listeners
+function setupEventListeners() {
+    // Portfolio management event listeners
+    const addButton = document.getElementById('addTickerBtn');
+    if (addButton) {
+        addButton.addEventListener('click', () => {
+            PortfolioManager.addTickerFromUI();
+        });
+    }
+
+    // Chat event listeners
+    const messageInput = document.getElementById('messageInput');
+    const sendButton = document.getElementById('sendButton');
+    
+    if (messageInput) {
+        messageInput.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') {
+                const message = messageInput.value.trim();
+                if (message) {
+                    ChatManager.sendMessage(message);
+                    messageInput.value = '';
+                }
+            }
+        });
+    }
+    
+    if (sendButton) {
+        sendButton.addEventListener('click', () => {
+            const message = messageInput.value.trim();
+            if (message) {
+                ChatManager.sendMessage(message);
+                messageInput.value = '';
+            }
+        });
+    }
+
+    // Portfolio table event listeners (handled by PortfolioManager methods)
+    // These are set up in renderPortfolioTable() when the table is rendered
+}
+
+// UI function to add ticker
+function addTickerFromUI() {
+    const tickerInput = document.getElementById('tickerInput');
+    const weightInput = document.getElementById('weightInput');
+    
+    if (!tickerInput || !weightInput) return;
+    
+    const ticker = tickerInput.value.trim();
+    const weight = weightInput.value;
+    
+    try {
+        const result = PortfolioManager.addTicker(ticker, weight);
+        
+        // Clear inputs
+        tickerInput.value = '';
+        weightInput.value = '';
+        tickerInput.focus();
+        
+        PortfolioManager.showNotification(result.message, 'success');
+    } catch (error) {
+        PortfolioManager.showNotification(error.message, 'error');
+    }
+}

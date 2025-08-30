@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Portfolio Agent</title>
+    <link rel="stylesheet" href="/static/styles.css">
+</head>
+<body>
+    <div class="container">
+        <!-- Left side - Table and whitespace (2/3 of screen) -->
+        <div class="left-panel">
+            <div class="table-section">
+                <h2>Portfolio Management</h2>
+                
+                <!-- Ticker Input Section -->
+                <div class="ticker-input-section">
+                    <div class="input-group">
+                        <input type="text" id="tickerInput" placeholder="Enter ticker symbol (e.g., AAPL)" class="ticker-input" maxlength="10">
+                        <input type="number" id="weightInput" placeholder="Weight %" class="weight-input" min="0" max="100" step="0.01">
+                        <button id="addTickerBtn" class="add-button">Add Ticker</button>
+                    </div>
+                    <div class="input-help">
+                        <small>Enter ticker symbol and weight percentage, then click Add Ticker</small>
+                    </div>
+                    <div class="weight-summary" id="weightSummary">
+                        <span class="weight-total">Total: <strong>0.00%</strong></span>
+                        <span class="weight-remaining">Remaining: <strong>100.00%</strong></span>
+                    </div>
+                </div>
+
+                <!-- Portfolio Table -->
+                <div class="portfolio-table-container">
+                    <div class="table-wrapper">
+                        <table class="data-table" id="portfolioTable">
+                            <thead>
+                                <tr id="portfolioTableHeader">
+                                    <th>Symbol</th>
+                                    <th>Weight (%)</th>
+                                    <!-- Dynamic tag columns will be added here -->
+                                </tr>
+                            </thead>
+                            <tbody id="portfolioTableBody">
+                                <!-- Table will be populated dynamically -->
+                            </tbody>
+                        </table>
+                    </div>
+                    <div class="empty-state" id="emptyState">
+                        <div class="empty-icon">📊</div>
+                        <h3>No tickers added yet</h3>
+                        <p>Start building your portfolio by adding ticker symbols above</p>
+                    </div>
+                </div>
+            </div>
+            <div class="whitespace-section">
+                <!-- Additional content can go here -->
+            </div>
+        </div>
+
+        <!-- Right side - Chat interface (1/3 of screen) -->
+        <div class="right-panel">
+            <div class="chat-container">
+                <div class="chat-header">
+                    <h3>Portfolio Assistant</h3>
+                </div>
+                <div class="chat-messages" id="chatMessages">
+                    <div class="message bot-message">
+                        <div class="message-content">
+                            Hello! I'm your portfolio assistant. How can I help you today?
+                        </div>
+                    </div>
+                </div>
+                <div class="chat-input-container">
+                    <input type="text" id="messageInput" placeholder="Type your message..." class="chat-input">
+                    <button id="sendButton" class="send-button">Send</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Edit Modal -->
+    <div class="modal-overlay" id="editModal">
+        <div class="modal">
+            <div class="modal-header">
+                <h3>Edit Ticker</h3>
+                <button class="close-button" id="closeModal">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="input-group">
+                    <input type="text" id="editTickerInput" placeholder="Ticker symbol" class="ticker-input">
+                    <input type="number" id="editWeightInput" placeholder="Weight %" class="weight-input" min="0" max="100" step="0.01">
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="cancel-button" id="cancelEdit">Cancel</button>
+                <button class="save-button" id="saveEdit">Save Changes</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="/static/script.js"></script>
+</body>
+</html>
