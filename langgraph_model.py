@@ -26,6 +26,8 @@ load_dotenv()
 class PortfolioState(TypedDict):
     messages: Annotated[list, add_messages]
     portfolio: Dict[str, Any]
+    current_tool_results: List[Dict[str, Any]]  # Track tool execution results
+    needs_final_response: bool  # Flag for when to generate final response
 
 # Portfolio Management Tools
 @tool
@@ -43,8 +45,13 @@ def add_ticker_to_portfolio(ticker: str, weight: float, portfolio: Dict[str, Any
         internal_portfolio = {}
         for ticker_data in portfolio["tickers"]:
             symbol = ticker_data["symbol"]
-            ticker_weight = float(ticker_data["weight"])
-            internal_portfolio[symbol] = ticker_weight
+            # Preserve the ENTIRE ticker_data structure including tags
+            if isinstance(ticker_data, dict) and len(ticker_data) > 2:
+                # Has tags - preserve the complete structure
+                internal_portfolio[symbol] = ticker_data
+            else:
+                # No tags - just store weight
+                internal_portfolio[symbol] = ticker_data["weight"]
     else:
         # Already internal format
         internal_portfolio = portfolio.copy()
@@ -54,16 +61,34 @@ def add_ticker_to_portfolio(ticker: str, weight: float, portfolio: Dict[str, Any
         return {
             "success": False,
             "message": f"Ticker {ticker} already exists in portfolio",
-            "portfolio": internal_portfolio
+            "portfolio": internal_portfolio,
+            "action": "add_ticker",
+            "ticker": ticker,
+            "weight": weight
         }
     
-    # Check total weight constraint
-    total_weight = sum(internal_portfolio.values()) + weight
+    # Check total weight constraint - ensure all weights are floats
+    total_weight = 0
+    for ticker_data in internal_portfolio.values():
+        if isinstance(ticker_data, dict):
+            weight_value = ticker_data["weight"]
+        else:
+            weight_value = ticker_data
+        
+        # Convert to float if it's a string
+        if isinstance(weight_value, str):
+            weight_value = float(weight_value)
+        total_weight += weight_value
+    
+    total_weight += weight
     if total_weight > 100:
         return {
             "success": False,
             "message": f"Adding {ticker} with {weight}% would exceed 100% total weight",
-            "portfolio": internal_portfolio
+            "portfolio": internal_portfolio,
+            "action": "add_ticker",
+            "ticker": ticker,
+            "weight": weight
         }
     
     # Add ticker
@@ -72,7 +97,10 @@ def add_ticker_to_portfolio(ticker: str, weight: float, portfolio: Dict[str, Any
     return {
         "success": True,
         "message": f"Added {ticker} with {weight}% weight",
-        "portfolio": internal_portfolio
+        "portfolio": internal_portfolio,
+        "action": "add_ticker",
+        "ticker": ticker,
+        "weight": weight
     }
 
 @tool
@@ -90,8 +118,13 @@ def remove_ticker_from_portfolio(ticker: str, portfolio: Dict[str, Any] = None) 
         internal_portfolio = {}
         for ticker_data in portfolio["tickers"]:
             symbol = ticker_data["symbol"]
-            ticker_weight = float(ticker_data["weight"])
-            internal_portfolio[symbol] = ticker_weight
+            # Preserve the ENTIRE ticker_data structure including tags
+            if isinstance(ticker_data, dict) and len(ticker_data) > 2:
+                # Has tags - preserve the complete structure
+                internal_portfolio[symbol] = ticker_data
+            else:
+                # No tags - just store weight
+                internal_portfolio[symbol] = ticker_data["weight"]
     else:
         # Already internal format
         internal_portfolio = portfolio.copy()
@@ -101,7 +134,9 @@ def remove_ticker_from_portfolio(ticker: str, portfolio: Dict[str, Any] = None) 
         return {
             "success": False,
             "message": f"Ticker {ticker} not found in portfolio",
-            "portfolio": internal_portfolio
+            "portfolio": internal_portfolio,
+            "action": "remove_ticker",
+            "ticker": ticker
         }
     
     # Remove ticker
@@ -110,7 +145,9 @@ def remove_ticker_from_portfolio(ticker: str, portfolio: Dict[str, Any] = None) 
     return {
         "success": True,
         "message": f"Removed {ticker} (was {removed_weight}%)",
-        "portfolio": internal_portfolio
+        "portfolio": internal_portfolio,
+        "action": "remove_ticker",
+        "ticker": ticker
     }
 
 @tool
@@ -147,7 +184,10 @@ def modify_ticker_weight(ticker: str, new_weight: float, portfolio: Dict[str, An
         return {
             "success": False,
             "message": f"Ticker {ticker} not found in portfolio",
-            "portfolio": internal_portfolio
+            "portfolio": internal_portfolio,
+            "action": "modify_weight",
+            "ticker": ticker,
+            "new_weight": new_weight
         }
     
     # Get current weight and check total weight constraint
@@ -155,17 +195,34 @@ def modify_ticker_weight(ticker: str, new_weight: float, portfolio: Dict[str, An
     if isinstance(current_weight, dict):
         current_weight = current_weight["weight"]
     
+    # Calculate new total weight - ensure all weights are floats
+    total_weight = 0
+    for ticker_data in internal_portfolio.values():
+        if isinstance(ticker_data, dict):
+            weight = ticker_data["weight"]
+        else:
+            weight = ticker_data
+        
+        # Convert to float if it's a string
+        if isinstance(weight, str):
+            weight = float(weight)
+        total_weight += weight
+    
+    # Convert current_weight to float if it's a string
+    if isinstance(current_weight, str):
+        current_weight = float(current_weight)
+    
     # Calculate new total weight
-    total_weight = sum(
-        ticker_data["weight"] if isinstance(ticker_data, dict) else ticker_data 
-        for ticker_data in internal_portfolio.values()
-    ) - current_weight + new_weight
+    total_weight = total_weight - current_weight + new_weight
     
     if total_weight > 100:
         return {
             "success": False,
             "message": f"Modifying {ticker} to {new_weight}% would exceed 100% total weight",
-            "portfolio": internal_portfolio
+            "portfolio": internal_portfolio,
+            "action": "modify_weight",
+            "ticker": ticker,
+            "new_weight": new_weight
         }
     
     # Update weight while preserving tags
@@ -181,7 +238,10 @@ def modify_ticker_weight(ticker: str, new_weight: float, portfolio: Dict[str, An
     return {
         "success": True,
         "message": f"Modified {ticker} weight from {current_weight}% to {new_weight}%",
-        "portfolio": internal_portfolio
+        "portfolio": internal_portfolio,
+        "action": "modify_weight",
+        "ticker": ticker,
+        "new_weight": new_weight
     }
 
 @tool
@@ -197,8 +257,13 @@ def get_portfolio_summary(portfolio: Dict[str, Any] = None) -> Dict[str, Any]:
         internal_portfolio = {}
         for ticker_data in portfolio["tickers"]:
             symbol = ticker_data["symbol"]
-            ticker_weight = float(ticker_data["weight"])
-            internal_portfolio[symbol] = ticker_weight
+            # Preserve the ENTIRE ticker_data structure including tags
+            if isinstance(ticker_data, dict) and len(ticker_data) > 2:
+                # Has tags - preserve the complete structure
+                internal_portfolio[symbol] = ticker_data
+            else:
+                # No tags - just store weight
+                internal_portfolio[symbol] = ticker_data["weight"]
     else:
         # Already internal format
         internal_portfolio = portfolio.copy()
@@ -219,11 +284,17 @@ def get_portfolio_summary(portfolio: Dict[str, Any] = None) -> Dict[str, Any]:
     total_weight = 0
     for value in internal_portfolio.values():
         if isinstance(value, dict) and "weight" in value:
-            total_weight += value["weight"]
-        elif isinstance(value, (int, float)):
-            total_weight += value
+            weight_value = value["weight"]
+        elif isinstance(value, (int, float, str)):
+            weight_value = value
         else:
             print(f"⚠️ Warning: Unexpected value type in portfolio: {type(value)}")
+            continue
+        
+        # Convert to float if it's a string
+        if isinstance(weight_value, str):
+            weight_value = float(weight_value)
+        total_weight += weight_value
     
     ticker_count = len(internal_portfolio)
     remaining_weight = 100 - total_weight
@@ -239,6 +310,7 @@ def get_portfolio_summary(portfolio: Dict[str, Any] = None) -> Dict[str, Any]:
         "success": True,
         "message": f"Portfolio has {ticker_count} tickers with {total_weight}% allocated",
         "portfolio": internal_portfolio,
+        "action": "get_summary",
         "summary": summary
     }
 
@@ -258,13 +330,13 @@ def tag_portfolio_tickers(tag_type: str, portfolio: Dict[str, Any] = None) -> Di
         internal_portfolio = {}
         for ticker_data in portfolio["tickers"]:
             symbol = ticker_data["symbol"]
-            ticker_weight = float(ticker_data["weight"])
-            # Preserve existing tags if they exist
+            # Preserve the ENTIRE ticker_data structure including tags
             if isinstance(ticker_data, dict) and len(ticker_data) > 2:
-                # Has additional properties (tags)
+                # Has tags - preserve the complete structure
                 internal_portfolio[symbol] = ticker_data
             else:
-                internal_portfolio[symbol] = ticker_weight
+                # No tags - just store weight
+                internal_portfolio[symbol] = ticker_data["weight"]
     else:
         # Already internal format
         internal_portfolio = portfolio.copy()
@@ -289,7 +361,9 @@ def tag_portfolio_tickers(tag_type: str, portfolio: Dict[str, Any] = None) -> Di
     return {
         "success": True,
         "message": f"Added {tag_type} tag to all tickers",
-        "portfolio": updated_portfolio
+        "portfolio": updated_portfolio,
+        "action": "tag_tickers",
+        "tag_type": normalized_tag_type
     }
 
 class PortfolioAgent:
@@ -510,9 +584,34 @@ No explanations, just the JSON object."""
             """Node that processes user input and decides on actions."""
             messages = state["messages"]
             portfolio = state.get("portfolio", {})
-            print(f"🔍 Debug: Agent node received portfolio state: {portfolio}")
+            current_tool_results = state.get("current_tool_results", [])
             
-            # Create system prompt
+            print(f"🔍 Debug: Agent node received portfolio state: {portfolio}")
+            print(f"🔍 Debug: Current tool results: {current_tool_results}")
+            
+            # If we have tool results, the agent should respond to them
+            if current_tool_results:
+                # Create response to tool results
+                response_prompt = f"""You are a portfolio management assistant. The following tools have been executed:
+
+{chr(10).join([f"- {result.get('action', 'unknown')}: {result.get('message', 'No message')}" for result in current_tool_results])}
+
+Current portfolio state: {portfolio}
+
+Provide a clear, concise response about what was accomplished. If the portfolio was modified, show the current state using format "TICKER: WEIGHT%" for each ticker.
+
+Keep your response under 100 words and be helpful."""
+                
+                response = self.llm.invoke([HumanMessage(content=response_prompt)])
+                
+                # Clear tool results and mark as needing final response
+                return {
+                    "messages": [response],
+                    "current_tool_results": [],
+                    "needs_final_response": True
+                }
+            
+            # Create system prompt for new user requests
             system_prompt = f"""You are a portfolio management assistant. You can:
 1. Add new tickers with weights
 2. Remove existing tickers
@@ -555,18 +654,21 @@ Respond naturally and call the appropriate tool when needed."""
             """Execute tools with proper state management."""
             messages = state["messages"]
             last_message = messages[-1]
+            portfolio = state.get("portfolio", {})
             
             if not hasattr(last_message, 'tool_calls') or not last_message.tool_calls:
                 return {"messages": [last_message]}
             
             tool_results = []
-            updated_portfolio = state.get("portfolio", {})
+            updated_portfolio = portfolio.copy()
             
             for tool_call in last_message.tool_calls:
                 tool_name = tool_call["name"]
                 tool_args = tool_call["args"]
                 
                 print(f"🔍 Debug: Executing tool: {tool_name}")
+                print(f"🔍 Debug: Tool args: {tool_args}")
+                print(f"🔍 Debug: Current portfolio: {updated_portfolio}")
                 
                 # Find and execute the tool
                 for tool in self.tools:
@@ -580,7 +682,9 @@ Respond naturally and call the appropriate tool when needed."""
                         print(f"🔍 Debug: Tool result: {result}")
                         
                         if result.get("success", False):
+                            # Update portfolio with tool result
                             updated_portfolio = result["portfolio"]
+                            print(f"🔍 Debug: Updated portfolio after {tool_name}: {updated_portfolio}")
                             
                             # Special handling for tag_portfolio_tickers
                             if tool_name == "tag_portfolio_tickers":
@@ -608,7 +712,6 @@ Respond naturally and call the appropriate tool when needed."""
                                     updated_portfolio
                                 )
                                 print(f"🔍 Debug: AI classification result: {updated_portfolio}")
-                                print(f"🔍 Debug: Portfolio state after AI classification: {updated_portfolio}")
                         
                         tool_results.append(result)
                         break
@@ -625,11 +728,12 @@ Respond naturally and call the appropriate tool when needed."""
                     )
                     tool_messages.append(tool_message)
             
-            # Update state with new portfolio and tool messages
+            # Update state with new portfolio and tool results
             print(f"🔍 Debug: Tool execution node returning portfolio: {updated_portfolio}")
             return {
                 "messages": tool_messages,
-                "portfolio": updated_portfolio
+                "portfolio": updated_portfolio,
+                "current_tool_results": tool_results
             }
         
         # Define the condition for routing
@@ -641,6 +745,11 @@ Respond naturally and call the appropriate tool when needed."""
             # If the last message has tool calls, continue to tools
             if hasattr(last_message, 'tool_calls') and last_message.tool_calls:
                 return "tools"
+            
+            # If we need a final response, end
+            if state.get("needs_final_response", False):
+                return END
+            
             return END
         
         # Add nodes to the graph
@@ -663,49 +772,63 @@ Respond naturally and call the appropriate tool when needed."""
                 internal_portfolio = {}
                 for ticker_data in portfolio["tickers"]:
                     symbol = ticker_data["symbol"]
-                    ticker_weight = float(ticker_data["weight"])
-                    internal_portfolio[symbol] = ticker_weight
+                    # Preserve the ENTIRE ticker_data structure including tags
+                    if isinstance(ticker_data, dict) and len(ticker_data) > 2:
+                        # Has tags - preserve the complete structure
+                        internal_portfolio[symbol] = ticker_data
+                    else:
+                        # No tags - just store weight
+                        internal_portfolio[symbol] = ticker_data["weight"]
             else:
                 internal_portfolio = portfolio or {}
             
-            # Prepare initial state for LangGraph
+            print(f"🔍 Debug: Initial portfolio for chat: {internal_portfolio}")
+            
+            # Prepare initial state for LangGraph with all required fields
             initial_state = {
                 "messages": [HumanMessage(content=user_message)],
-                "portfolio": internal_portfolio
+                "portfolio": internal_portfolio,
+                "current_tool_results": [],
+                "needs_final_response": False
             }
+            
+            print(f"🔍 Debug: Initial state: {initial_state}")
             
             # Execute the LangGraph workflow
             result = self.graph.invoke(initial_state)
             
-            # Extract the final response
-            final_message = result["messages"][-1]
+            print(f"🔍 Debug: Final result state: {result}")
             
-            # Get the final portfolio from the result state
+            # Extract the final response and portfolio
+            final_messages = result.get("messages", [])
             final_portfolio = result.get("portfolio", internal_portfolio)
             
-            # Generate final response
-            final_prompt = f"""You are a portfolio management assistant. The user asked: "{user_message}"
-
-Portfolio has been updated through tool execution.
-
-If the portfolio has tags (like asset_class, region, etc.), you MUST preserve them in your response.
-
-Provide a clear, concise response confirming what was done.
-Use format: "TICKER: WEIGHT%" for each ticker.
-Keep it under 100 words."""
+            # Get the last meaningful message
+            final_message = None
+            for msg in reversed(final_messages):
+                if hasattr(msg, 'content') and msg.content:
+                    final_message = msg
+                    break
             
-            final_response = self.llm.invoke([HumanMessage(content=final_prompt)])
-            ai_response = final_response.content
+            if not final_message:
+                final_message = final_messages[-1] if final_messages else HumanMessage(content="No response generated")
+            
+            # Convert final portfolio to frontend format
+            frontend_portfolio = self._convert_to_frontend_format(final_portfolio)
             
             return {
-                "response": ai_response,
-                "portfolio_state": self._convert_to_frontend_format(final_portfolio),
-                "changes": ["Portfolio was updated"]
+                "response": final_message.content,
+                "portfolio_state": frontend_portfolio,
+                "changes": ["Portfolio was updated through LangGraph workflow"]
             }
                 
         except Exception as e:
             # Fallback response if processing fails
             error_msg = f"I encountered an error processing your request: {str(e)}"
+            print(f"❌ Error in chat method: {str(e)}")
+            import traceback
+            print(f"🔍 Debug: Full traceback: {traceback.format_exc()}")
+            
             return {
                 "response": error_msg,
                 "portfolio_state": self._convert_to_frontend_format(portfolio or {}),
