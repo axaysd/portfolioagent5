@@ -3,9 +3,15 @@ window.PortfolioManager = {
     // Portfolio data storage
     portfolio: [],
     availableTags: [], // Track available tags for dynamic columns
+    sessionId: null, // Current session ID
     
     // Initialize portfolio from localStorage
     initialize() {
+        // Generate session ID if not exists
+        if (!this.sessionId) {
+            this.sessionId = 'session_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
+        }
+        
         const saved = localStorage.getItem('portfolio');
         if (saved) {
             const savedData = JSON.parse(saved);
@@ -20,7 +26,8 @@ window.PortfolioManager = {
     savePortfolio() {
         const portfolioData = {
             portfolio: this.portfolio,
-            tags: this.availableTags
+            tags: this.availableTags,
+            session_id: this.sessionId
         };
         localStorage.setItem('portfolio', JSON.stringify(portfolioData));
     },
@@ -593,6 +600,232 @@ window.PortfolioManager = {
         
         console.log('✅ Portfolio updated from structured data with tag preservation');
     },
+
+    // Session Management Methods
+    startNewSession() {
+        // Generate new session ID
+        this.sessionId = 'session_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
+        
+        // Clear portfolio and tags
+        this.portfolio = [];
+        this.availableTags = [];
+        
+        // Clear chat messages
+        const chatMessages = document.getElementById('chatMessages');
+        if (chatMessages) {
+            chatMessages.innerHTML = '';
+        }
+        
+        // Save new session state
+        this.savePortfolio();
+        
+        // Update UI
+        this.updateUI();
+        
+        // Show welcome message
+        let welcomeMessage = "🆕 New session started! I'm your AI-powered portfolio assistant. How can I help you today?";
+        
+        // If tags are loaded, mention them
+        if (this.availableTags.length > 0) {
+            const tagList = this.availableTags.join(', ');
+            welcomeMessage += `\n\n📋 Tag configuration loaded: ${tagList}`;
+            welcomeMessage += `\nI'll automatically populate appropriate values for these tags when you add tickers.`;
+        }
+        
+        window.ChatManager.addMessage(welcomeMessage, false);
+        
+        this.showNotification('New session started', 'success');
+        console.log('✅ New session started:', this.sessionId);
+    },
+
+    // Tag Configuration Management
+    saveTagConfiguration(configName) {
+        if (!configName || configName.trim() === '') {
+            this.showNotification('Please enter a configuration name', 'error');
+            return;
+        }
+        
+        const configNameClean = configName.trim();
+        
+        // Get saved configurations
+        const savedConfigs = this.getSavedTagConfigurations();
+        
+        // Check if name already exists
+        if (savedConfigs.some(config => config.name === configNameClean)) {
+            this.showNotification('Configuration name already exists', 'error');
+            return;
+        }
+        
+        // Create new configuration
+        const newConfig = {
+            name: configNameClean,
+            tags: [...this.availableTags],
+            created_at: new Date().toISOString(),
+            session_id: this.sessionId
+        };
+        
+        // Add to saved configurations
+        savedConfigs.push(newConfig);
+        
+        // Save to localStorage
+        localStorage.setItem('portfolio_tag_configs', JSON.stringify(savedConfigs));
+        
+        this.showNotification(`Tag configuration '${configNameClean}' saved successfully`, 'success');
+        console.log('✅ Tag configuration saved:', newConfig);
+    },
+
+    loadTagConfiguration(configName) {
+        const savedConfigs = this.getSavedTagConfigurations();
+        const config = savedConfigs.find(c => c.name === configName);
+        
+        if (!config) {
+            this.showNotification('Configuration not found', 'error');
+            return;
+        }
+        
+        // Replace current tags with loaded configuration
+        this.availableTags = [...config.tags];
+        
+        // Update UI
+        this.updateUI();
+        this.savePortfolio();
+        
+        this.showNotification(`Tag configuration '${configName}' loaded successfully`, 'success');
+        console.log('✅ Tag configuration loaded:', config);
+        
+        // If there are existing tickers, ask AI to populate tag values
+        if (this.portfolio.length > 0 && this.availableTags.length > 0) {
+            const tickerList = this.portfolio.map(item => item.ticker).join(', ');
+            const tagList = this.availableTags.join(', ');
+            const message = `I've loaded the tag configuration "${configName}" with tags: ${tagList}. Please populate the appropriate values for these tags for my existing tickers: ${tickerList}.`;
+            
+            // Add a small delay to ensure UI is updated first
+            setTimeout(() => {
+                window.ChatManager.sendMessage(message);
+            }, 500);
+        }
+    },
+
+    getSavedTagConfigurations() {
+        const saved = localStorage.getItem('portfolio_tag_configs');
+        return saved ? JSON.parse(saved) : [];
+    },
+
+    deleteTagConfiguration(configName) {
+        const savedConfigs = this.getSavedTagConfigurations();
+        const filteredConfigs = savedConfigs.filter(config => config.name !== configName);
+        
+        localStorage.setItem('portfolio_tag_configs', JSON.stringify(filteredConfigs));
+        
+        this.showNotification(`Configuration '${configName}' deleted`, 'success');
+        console.log('✅ Tag configuration deleted:', configName);
+    },
+};
+
+// Tag Configuration Manager
+window.TagConfigManager = {
+    currentMode: null, // 'save' or 'load'
+    selectedConfig: null,
+
+    openSaveModal() {
+        this.currentMode = 'save';
+        const modal = document.getElementById('tagConfigModal');
+        const title = document.getElementById('tagConfigTitle');
+        const saveContent = document.getElementById('saveTagConfigContent');
+        const loadContent = document.getElementById('loadTagConfigContent');
+        const configInput = document.getElementById('configNameInput');
+        const currentTagsList = document.getElementById('currentTagsList');
+
+        title.textContent = 'Save Tag Configuration';
+        saveContent.style.display = 'block';
+        loadContent.style.display = 'none';
+        
+        // Clear input
+        configInput.value = '';
+        
+        // Show current tags
+        this.displayCurrentTags(currentTagsList);
+        
+        modal.classList.add('show');
+        configInput.focus();
+    },
+
+    openLoadModal() {
+        this.currentMode = 'load';
+        const modal = document.getElementById('tagConfigModal');
+        const title = document.getElementById('tagConfigTitle');
+        const saveContent = document.getElementById('saveTagConfigContent');
+        const loadContent = document.getElementById('loadTagConfigContent');
+        const savedConfigsList = document.getElementById('savedConfigsList');
+
+        title.textContent = 'Load Tag Configuration';
+        saveContent.style.display = 'none';
+        loadContent.style.display = 'block';
+        
+        // Show saved configurations
+        this.displaySavedConfigurations(savedConfigsList);
+        
+        modal.classList.add('show');
+    },
+
+    displayCurrentTags(container) {
+        const tags = window.PortfolioManager.availableTags;
+        
+        if (tags.length === 0) {
+            container.innerHTML = '<p style="color: #6c757d; font-style: italic;">No tags configured yet</p>';
+            return;
+        }
+        
+        container.innerHTML = tags.map(tag => 
+            `<div class="tag-item">${tag}</div>`
+        ).join('');
+    },
+
+    displaySavedConfigurations(container) {
+        const configs = window.PortfolioManager.getSavedTagConfigurations();
+        
+        if (configs.length === 0) {
+            container.innerHTML = '<p style="color: #6c757d; font-style: italic;">No saved configurations found</p>';
+            return;
+        }
+        
+        container.innerHTML = configs.map(config => {
+            const date = new Date(config.created_at).toLocaleDateString();
+            return `
+                <div class="saved-config-item" data-config-name="${config.name}">
+                    <div class="config-name">${config.name}</div>
+                    <div class="config-details">
+                        ${config.tags.length} tags • Created ${date}
+                    </div>
+                </div>
+            `;
+        }).join('');
+    },
+
+    closeModal() {
+        const modal = document.getElementById('tagConfigModal');
+        modal.classList.remove('show');
+        this.currentMode = null;
+        this.selectedConfig = null;
+    },
+
+    confirmAction() {
+        if (this.currentMode === 'save') {
+            const configName = document.getElementById('configNameInput').value;
+            window.PortfolioManager.saveTagConfiguration(configName);
+        } else if (this.currentMode === 'load' && this.selectedConfig) {
+            window.PortfolioManager.loadTagConfiguration(this.selectedConfig);
+            
+            // Add helpful message about AI populating values
+            const config = window.PortfolioManager.getSavedTagConfigurations().find(c => c.name === this.selectedConfig);
+            if (config && config.tags.length > 0) {
+                const tagList = config.tags.join(', ');
+                window.ChatManager.addMessage(`📋 Tag configuration "${this.selectedConfig}" loaded with tags: ${tagList}. I'll automatically populate appropriate values for these tags when you add tickers.`, false);
+            }
+        }
+        
+        this.closeModal();
+    }
 };
 
 // Chat Manager for LangGraph AI Integration
@@ -641,7 +874,8 @@ window.ChatManager = {
                 },
                 body: JSON.stringify({
                     message: message,
-                    portfolio: portfolio
+                    portfolio: portfolio,
+                    available_tags: window.PortfolioManager.availableTags
                 })
             });
             
@@ -717,6 +951,81 @@ document.addEventListener('DOMContentLoaded', function() {
 
 // Setup all event listeners
 function setupEventListeners() {
+    // Session management event listeners
+    const newSessionBtn = document.getElementById('newSessionBtn');
+    const saveTagsBtn = document.getElementById('saveTagsBtn');
+    const loadTagsBtn = document.getElementById('loadTagsBtn');
+    
+    if (newSessionBtn) {
+        newSessionBtn.addEventListener('click', () => {
+            if (confirm('Start a new session? This will clear your current portfolio and chat history.')) {
+                window.PortfolioManager.startNewSession();
+            }
+        });
+    }
+    
+    if (saveTagsBtn) {
+        saveTagsBtn.addEventListener('click', () => {
+            window.TagConfigManager.openSaveModal();
+        });
+    }
+    
+    if (loadTagsBtn) {
+        loadTagsBtn.addEventListener('click', () => {
+            window.TagConfigManager.openLoadModal();
+        });
+    }
+
+    // Tag configuration modal event listeners
+    const tagConfigModal = document.getElementById('tagConfigModal');
+    const closeTagConfigModal = document.getElementById('closeTagConfigModal');
+    const cancelTagConfig = document.getElementById('cancelTagConfig');
+    const confirmTagConfig = document.getElementById('confirmTagConfig');
+    
+    if (closeTagConfigModal) {
+        closeTagConfigModal.addEventListener('click', () => {
+            window.TagConfigManager.closeModal();
+        });
+    }
+    
+    if (cancelTagConfig) {
+        cancelTagConfig.addEventListener('click', () => {
+            window.TagConfigManager.closeModal();
+        });
+    }
+    
+    if (confirmTagConfig) {
+        confirmTagConfig.addEventListener('click', () => {
+            window.TagConfigManager.confirmAction();
+        });
+    }
+    
+    // Close modal when clicking outside
+    if (tagConfigModal) {
+        tagConfigModal.addEventListener('click', (e) => {
+            if (e.target === tagConfigModal) {
+                window.TagConfigManager.closeModal();
+            }
+        });
+    }
+    
+    // Handle saved configuration selection
+    document.addEventListener('click', (e) => {
+        if (e.target.closest('.saved-config-item')) {
+            const configItem = e.target.closest('.saved-config-item');
+            const configName = configItem.dataset.configName;
+            
+            // Remove previous selection
+            document.querySelectorAll('.saved-config-item').forEach(item => {
+                item.classList.remove('selected');
+            });
+            
+            // Select current item
+            configItem.classList.add('selected');
+            window.TagConfigManager.selectedConfig = configName;
+        }
+    });
+
     // Chat event listeners
     const messageInput = document.getElementById('messageInput');
     const sendButton = document.getElementById('sendButton');

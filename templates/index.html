@@ -11,9 +11,14 @@
         <!-- Left side - Table and whitespace (2/3 of screen) -->
         <div class="left-panel">
             <div class="table-section">
-                <h2>Portfolio Management</h2>
-                
-
+                <div class="header-controls">
+                    <h2>Portfolio Management</h2>
+                    <div class="session-controls">
+                        <button id="newSessionBtn" class="session-btn new-session-btn">🆕 New Session</button>
+                        <button id="saveTagsBtn" class="session-btn save-tags-btn">💾 Save Tags</button>
+                        <button id="loadTagsBtn" class="session-btn load-tags-btn">📂 Load Tags</button>
+                    </div>
+                </div>
 
                 <!-- Portfolio Table -->
                 <div class="portfolio-table-container">
@@ -80,6 +85,34 @@
             <div class="modal-footer">
                 <button class="cancel-button" id="cancelEdit">Cancel</button>
                 <button class="save-button" id="saveEdit">Save Changes</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Tag Configuration Modal -->
+    <div class="modal-overlay" id="tagConfigModal">
+        <div class="modal">
+            <div class="modal-header">
+                <h3 id="tagConfigTitle">Save Tag Configuration</h3>
+                <button class="close-button" id="closeTagConfigModal">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div id="saveTagConfigContent" style="display: none;">
+                    <label for="configNameInput">Configuration Name:</label>
+                    <input type="text" id="configNameInput" placeholder="e.g., Asset Classes" class="config-input">
+                    <div class="current-tags">
+                        <h4>Current Tags:</h4>
+                        <div id="currentTagsList"></div>
+                    </div>
+                </div>
+                <div id="loadTagConfigContent" style="display: none;">
+                    <h4>Available Configurations:</h4>
+                    <div id="savedConfigsList"></div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="cancel-button" id="cancelTagConfig">Cancel</button>
+                <button class="save-button" id="confirmTagConfig">Confirm</button>
             </div>
         </div>
     </div>
