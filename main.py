@@ -50,21 +50,27 @@ async def chat_endpoint(request: Dict[str, Any]):
     Expected request format:
     {
         "message": "user message here",
-        "portfolio": {"AAPL": 30, "GOOGL": 25}
+        "portfolio": {"AAPL": 30, "GOOGL": 25},
+        "available_tags": ["asset_class", "region"],
+        "tag_definitions": {"asset_class": ["equity", "fixed income"], "region": ["us", "non us"]}
     }
     """
     try:
         user_message = request.get("message", "")
         portfolio = request.get("portfolio", {})
+        available_tags = request.get("available_tags", [])
+        tag_definitions = request.get("tag_definitions", {})
         
         if not user_message:
             raise HTTPException(status_code=400, detail="Message is required")
         
         print(f"🔍 Debug: Received message: {user_message}")
         print(f"🔍 Debug: Portfolio: {portfolio}")
+        print(f"🔍 Debug: Available tags: {available_tags}")
+        print(f"🔍 Debug: Tag definitions: {tag_definitions}")
         
         # Get response from LangGraph agent
-        agent_response = chat_with_portfolio_agent(user_message, portfolio)
+        agent_response = chat_with_portfolio_agent(user_message, portfolio, available_tags, tag_definitions)
         
         print(f"🔍 Debug: LangGraph response: {agent_response['response']}")
         print(f"🔍 Debug: LangGraph portfolio state: {agent_response['portfolio_state']}")

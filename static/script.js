@@ -3,6 +3,7 @@ window.PortfolioManager = {
     // Portfolio data storage
     portfolio: [],
     availableTags: [], // Track available tags for dynamic columns
+    tagDefinitions: {}, // Store specific values for each tag (e.g., {"Asset Class": ["equity", "fixed income", "alternate", "cash"]})
     sessionId: null, // Current session ID
     
     // Initialize portfolio from localStorage
@@ -17,6 +18,7 @@ window.PortfolioManager = {
             const savedData = JSON.parse(saved);
             this.portfolio = savedData.portfolio || savedData; // Handle both old and new formats
             this.availableTags = savedData.tags || []; // Load available tags
+            this.tagDefinitions = savedData.tagDefinitions || {}; // Load tag definitions
         }
         this.updateUI();
         this.updateWeightSummary();
@@ -27,6 +29,7 @@ window.PortfolioManager = {
         const portfolioData = {
             portfolio: this.portfolio,
             tags: this.availableTags,
+            tagDefinitions: this.tagDefinitions,
             session_id: this.sessionId
         };
         localStorage.setItem('portfolio', JSON.stringify(portfolioData));
@@ -606,9 +609,10 @@ window.PortfolioManager = {
         // Generate new session ID
         this.sessionId = 'session_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
         
-        // Clear portfolio and tags
+        // Clear portfolio, tags, and definitions
         this.portfolio = [];
         this.availableTags = [];
+        this.tagDefinitions = {};
         
         // Clear chat messages
         const chatMessages = document.getElementById('chatMessages');
@@ -629,7 +633,20 @@ window.PortfolioManager = {
         if (this.availableTags.length > 0) {
             const tagList = this.availableTags.join(', ');
             welcomeMessage += `\n\n📋 Tag configuration loaded: ${tagList}`;
-            welcomeMessage += `\nI'll automatically populate appropriate values for these tags when you add tickers.`;
+            
+            // Show tag definitions if available
+            const tagDefinitions = this.getAllTagDefinitions();
+            const definedTags = Object.keys(tagDefinitions);
+            if (definedTags.length > 0) {
+                welcomeMessage += `\n\n🏷️ Tag definitions:`;
+                definedTags.forEach(tag => {
+                    const values = tagDefinitions[tag].join(', ');
+                    welcomeMessage += `\n• ${tag}: ${values}`;
+                });
+            }
+            
+            welcomeMessage += `\n\nI'll automatically populate appropriate values for these tags when you add tickers.`;
+            welcomeMessage += `\nYou can also define tag values by saying: "tag [tag name] ([value1] vs [value2] vs [value3])"`;
         }
         
         window.ChatManager.addMessage(welcomeMessage, false);
@@ -660,6 +677,7 @@ window.PortfolioManager = {
         const newConfig = {
             name: configNameClean,
             tags: [...this.availableTags],
+            tagDefinitions: {...this.tagDefinitions},
             created_at: new Date().toISOString(),
             session_id: this.sessionId
         };
@@ -683,8 +701,9 @@ window.PortfolioManager = {
             return;
         }
         
-        // Replace current tags with loaded configuration
+        // Replace current tags and definitions with loaded configuration
         this.availableTags = [...config.tags];
+        this.tagDefinitions = {...(config.tagDefinitions || {})};
         
         // Update UI
         this.updateUI();
@@ -692,6 +711,18 @@ window.PortfolioManager = {
         
         this.showNotification(`Tag configuration '${configName}' loaded successfully`, 'success');
         console.log('✅ Tag configuration loaded:', config);
+        
+        // Show tag definitions in chat
+        const tagDefinitions = this.getAllTagDefinitions();
+        const definedTags = Object.keys(tagDefinitions);
+        if (definedTags.length > 0) {
+            let definitionMessage = `🏷️ Tag definitions loaded:`;
+            definedTags.forEach(tag => {
+                const values = tagDefinitions[tag].join(', ');
+                definitionMessage += `\n• ${tag}: ${values}`;
+            });
+            window.ChatManager.addMessage(definitionMessage, false);
+        }
         
         // If there are existing tickers, ask AI to populate tag values
         if (this.portfolio.length > 0 && this.availableTags.length > 0) {
@@ -719,6 +750,75 @@ window.PortfolioManager = {
         
         this.showNotification(`Configuration '${configName}' deleted`, 'success');
         console.log('✅ Tag configuration deleted:', configName);
+    },
+
+    // Tag Definition Management
+    setTagDefinition(tagName, values) {
+        if (!tagName || !values || !Array.isArray(values) || values.length === 0) {
+            this.showNotification('Invalid tag definition', 'error');
+            return;
+        }
+        
+        // Clean and validate values
+        const cleanValues = values.map(v => v.trim().toLowerCase()).filter(v => v.length > 0);
+        
+        if (cleanValues.length === 0) {
+            this.showNotification('No valid values provided', 'error');
+            return;
+        }
+        
+        this.tagDefinitions[tagName] = cleanValues;
+        this.savePortfolio();
+        
+        this.showNotification(`Tag definition for '${tagName}' updated`, 'success');
+        console.log('✅ Tag definition set:', tagName, cleanValues);
+    },
+
+    getTagDefinition(tagName) {
+        return this.tagDefinitions[tagName] || [];
+    },
+
+    getAllTagDefinitions() {
+        return this.tagDefinitions;
+    },
+
+    clearTagDefinition(tagName) {
+        if (this.tagDefinitions[tagName]) {
+            delete this.tagDefinitions[tagName];
+            this.savePortfolio();
+            this.showNotification(`Tag definition for '${tagName}' cleared`, 'success');
+        }
+    },
+
+    // Parse AI response for tag definition commands
+    parseTagDefinitionCommand(message) {
+        const lowerMessage = message.toLowerCase();
+        
+        // Look for patterns like "tag asset classes (equity vs fixed income vs alternate vs cash)"
+        const tagDefinitionPattern = /tag\s+([^(]+)\s*\(([^)]+)\)/i;
+        const match = message.match(tagDefinitionPattern);
+        
+        if (match) {
+            const tagName = match[1].trim();
+            const valuesString = match[2].trim();
+            
+            // Split by common separators and clean up
+            const values = valuesString
+                .split(/vs\.?|,|;|\|/)
+                .map(v => v.trim())
+                .filter(v => v.length > 0);
+            
+            if (values.length > 0) {
+                this.setTagDefinition(tagName, values);
+                
+                // Show notification
+                this.showNotification(`Tag definition for '${tagName}' updated: ${values.join(', ')}`);
+                
+                return true;
+            }
+        }
+        
+        return false;
     },
 };
 
@@ -770,15 +870,18 @@ window.TagConfigManager = {
 
     displayCurrentTags(container) {
         const tags = window.PortfolioManager.availableTags;
+        const tagDefinitions = window.PortfolioManager.getAllTagDefinitions();
         
         if (tags.length === 0) {
             container.innerHTML = '<p style="color: #6c757d; font-style: italic;">No tags configured yet</p>';
             return;
         }
         
-        container.innerHTML = tags.map(tag => 
-            `<div class="tag-item">${tag}</div>`
-        ).join('');
+        container.innerHTML = tags.map(tag => {
+            const definitions = tagDefinitions[tag];
+            const definitionText = definitions ? ` (${definitions.join(', ')})` : '';
+            return `<div class="tag-item">${tag}${definitionText}</div>`;
+        }).join('');
     },
 
     displaySavedConfigurations(container) {
@@ -791,11 +894,15 @@ window.TagConfigManager = {
         
         container.innerHTML = configs.map(config => {
             const date = new Date(config.created_at).toLocaleDateString();
+            const tagDefinitions = config.tagDefinitions || {};
+            const hasDefinitions = Object.keys(tagDefinitions).length > 0;
+            const definitionText = hasDefinitions ? ' • With definitions' : '';
+            
             return `
                 <div class="saved-config-item" data-config-name="${config.name}">
                     <div class="config-name">${config.name}</div>
                     <div class="config-details">
-                        ${config.tags.length} tags • Created ${date}
+                        ${config.tags.length} tags${definitionText} • Created ${date}
                     </div>
                 </div>
             `;
@@ -820,7 +927,21 @@ window.TagConfigManager = {
             const config = window.PortfolioManager.getSavedTagConfigurations().find(c => c.name === this.selectedConfig);
             if (config && config.tags.length > 0) {
                 const tagList = config.tags.join(', ');
-                window.ChatManager.addMessage(`📋 Tag configuration "${this.selectedConfig}" loaded with tags: ${tagList}. I'll automatically populate appropriate values for these tags when you add tickers.`, false);
+                let message = `📋 Tag configuration "${this.selectedConfig}" loaded with tags: ${tagList}.`;
+                
+                // Show tag definitions if available
+                const tagDefinitions = config.tagDefinitions || {};
+                const definedTags = Object.keys(tagDefinitions);
+                if (definedTags.length > 0) {
+                    message += `\n\n🏷️ Tag definitions:`;
+                    definedTags.forEach(tag => {
+                        const values = tagDefinitions[tag].join(', ');
+                        message += `\n• ${tag}: ${values}`;
+                    });
+                }
+                
+                message += `\n\nI'll automatically populate appropriate values for these tags when you add tickers.`;
+                window.ChatManager.addMessage(message, false);
             }
         }
         
@@ -853,6 +974,9 @@ window.ChatManager = {
     async sendMessage(message) {
         if (!message.trim()) return;
         
+        // Check for tag definition commands first
+        const wasTagDefinition = window.PortfolioManager.parseTagDefinitionCommand(message);
+        
         // Add user message
         this.addMessage(message, true);
         
@@ -875,7 +999,8 @@ window.ChatManager = {
                 body: JSON.stringify({
                     message: message,
                     portfolio: portfolio,
-                    available_tags: window.PortfolioManager.availableTags
+                    available_tags: window.PortfolioManager.availableTags,
+                    tag_definitions: window.PortfolioManager.getAllTagDefinitions()
                 })
             });
             

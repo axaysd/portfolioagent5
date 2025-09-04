@@ -28,6 +28,8 @@ class PortfolioState(TypedDict):
     portfolio: Dict[str, Any]
     current_tool_results: List[Dict[str, Any]]  # Track tool execution results
     needs_final_response: bool  # Flag for when to generate final response
+    available_tags: List[str]  # Available tag names
+    tag_definitions: Dict[str, List[str]]  # Tag definitions with allowed values
 
 # Portfolio Management Tools
 @tool
@@ -395,18 +397,42 @@ class PortfolioAgent:
         # Build the LangGraph workflow
         self.graph = self._build_graph()
     
-    def _classify_tickers_with_ai(self, tag_type: str, ticker_data: List[Dict], internal_portfolio: Dict[str, Any]) -> Dict[str, Any]:
+    def _classify_tickers_with_ai(self, tag_type: str, ticker_data: List[Dict], internal_portfolio: Dict[str, Any], tag_definitions: Dict[str, List[str]] = None) -> Dict[str, Any]:
         """Use AI to classify tickers based on the requested tag type."""
         try:
             print(f"🔍 Debug: _classify_tickers_with_ai called with tag_type: {tag_type}")
             print(f"🔍 Debug: ticker_data: {ticker_data}")
             print(f"🔍 Debug: internal_portfolio: {internal_portfolio}")
+            print(f"🔍 Debug: tag_definitions: {tag_definitions}")
             
             # Extract ticker symbols for classification
             ticker_symbols = [ticker["symbol"] for ticker in ticker_data]
             
+            # Get allowed values for this tag type
+            allowed_values = tag_definitions.get(tag_type, []) if tag_definitions else []
+            
             # Create classification prompt
-            classification_prompt = f"""You are a financial expert. Classify the following ticker symbols by their {tag_type}.
+            if allowed_values:
+                # Use constrained classification with predefined values
+                classification_prompt = f"""You are a financial expert. Classify the following ticker symbols by their {tag_type}.
+
+Ticker symbols: {', '.join(ticker_symbols)}
+
+IMPORTANT: You must classify each ticker using ONLY one of these predefined values: {', '.join(allowed_values)}
+
+For each ticker, provide the most appropriate {tag_type} classification from the allowed values above.
+
+Return ONLY a JSON object with ticker symbols as keys and classifications as values. Example:  
+{{
+    "SPY": "{allowed_values[0] if allowed_values else 'Equity'}",
+    "BND": "{allowed_values[1] if len(allowed_values) > 1 else 'Fixed Income'}",
+    "VTI": "{allowed_values[0] if allowed_values else 'Equity'}"
+}}
+
+No explanations, just the JSON object."""
+            else:
+                # Use free-form classification
+                classification_prompt = f"""You are a financial expert. Classify the following ticker symbols by their {tag_type}.
 
 Ticker symbols: {', '.join(ticker_symbols)}
 
@@ -585,9 +611,13 @@ No explanations, just the JSON object."""
             messages = state["messages"]
             portfolio = state.get("portfolio", {})
             current_tool_results = state.get("current_tool_results", [])
+            available_tags = state.get("available_tags", [])
+            tag_definitions = state.get("tag_definitions", {})
             
             print(f"🔍 Debug: Agent node received portfolio state: {portfolio}")
             print(f"🔍 Debug: Current tool results: {current_tool_results}")
+            print(f"🔍 Debug: Available tags: {available_tags}")
+            print(f"🔍 Debug: Tag definitions: {tag_definitions}")
             
             # If we have tool results, the agent should respond to them
             if current_tool_results:
@@ -612,6 +642,15 @@ Keep your response under 100 words and be helpful."""
                 }
             
             # Create system prompt for new user requests
+            tag_info = ""
+            if available_tags:
+                tag_info += f"\n\nAvailable tags: {', '.join(available_tags)}"
+                if tag_definitions:
+                    tag_info += "\nTag definitions:"
+                    for tag, values in tag_definitions.items():
+                        tag_info += f"\n- {tag}: {', '.join(values)}"
+                    tag_info += "\n\nWhen classifying tickers, you MUST use only the predefined values for each tag type."
+            
             system_prompt = f"""You are a portfolio management assistant. You can:
 1. Add new tickers with weights
 2. Remove existing tickers
@@ -635,7 +674,7 @@ REBALANCING RULE: If a user asks to "rebalance" or "modify and rebalance", you M
 
 Always ensure the total portfolio weight doesn't exceed 100%. If a request would exceed this limit, explain why it can't be done.
 
-Current portfolio: {portfolio}
+Current portfolio: {portfolio}{tag_info}
 
 IMPORTANT: Each tool call will automatically receive the current portfolio state with all existing tags and modifications. You only need to provide the specific parameters (ticker, weight, tag_type). The portfolio state is maintained between tool calls.
 
@@ -706,10 +745,14 @@ Respond naturally and call the appropriate tool when needed."""
                                             "weight": data
                                         })
                                 
+                                # Get tag definitions from state
+                                tag_definitions = state.get("tag_definitions", {})
+                                
                                 updated_portfolio = self._classify_tickers_with_ai(
                                     tag_type,
                                     ticker_data,
-                                    updated_portfolio
+                                    updated_portfolio,
+                                    tag_definitions
                                 )
                                 print(f"🔍 Debug: AI classification result: {updated_portfolio}")
                         
@@ -764,7 +807,7 @@ Respond naturally and call the appropriate tool when needed."""
         # Compile the graph
         return builder.compile()
     
-    def chat(self, user_message: str, portfolio: Dict[str, Any] = None) -> Dict[str, Any]:
+    def chat(self, user_message: str, portfolio: Dict[str, Any] = None, available_tags: List[str] = None, tag_definitions: Dict[str, List[str]] = None) -> Dict[str, Any]:
         """Main chat method that uses the LangGraph workflow."""
         try:
             # Convert frontend portfolio to internal format
@@ -783,13 +826,17 @@ Respond naturally and call the appropriate tool when needed."""
                 internal_portfolio = portfolio or {}
             
             print(f"🔍 Debug: Initial portfolio for chat: {internal_portfolio}")
+            print(f"🔍 Debug: Available tags: {available_tags}")
+            print(f"🔍 Debug: Tag definitions: {tag_definitions}")
             
             # Prepare initial state for LangGraph with all required fields
             initial_state = {
                 "messages": [HumanMessage(content=user_message)],
                 "portfolio": internal_portfolio,
                 "current_tool_results": [],
-                "needs_final_response": False
+                "needs_final_response": False,
+                "available_tags": available_tags or [],
+                "tag_definitions": tag_definitions or {}
             }
             
             print(f"🔍 Debug: Initial state: {initial_state}")
@@ -839,18 +886,20 @@ Respond naturally and call the appropriate tool when needed."""
 portfolio_agent = PortfolioAgent()
 
 # Export the main function for external use
-def chat_with_portfolio_agent(user_message: str, portfolio: Dict[str, Any] = None) -> Dict[str, Any]:
+def chat_with_portfolio_agent(user_message: str, portfolio: Dict[str, Any] = None, available_tags: List[str] = None, tag_definitions: Dict[str, List[str]] = None) -> Dict[str, Any]:
     """
     Convenience function to chat with the portfolio agent.
     
     Args:
         user_message: The user's input message
         portfolio: Current portfolio state (optional)
+        available_tags: List of available tag names (optional)
+        tag_definitions: Dict of tag definitions with allowed values (optional)
         
     Returns:
         Dict containing response, portfolio_state, and changes
     """
-    return portfolio_agent.chat(user_message, portfolio)
+    return portfolio_agent.chat(user_message, portfolio, available_tags, tag_definitions)
 
 if __name__ == "__main__":
     # Test the agent
