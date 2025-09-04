@@ -164,7 +164,6 @@ window.PortfolioManager = {
             if (tableWrapper) tableWrapper.style.display = 'block';
             this.renderPortfolioTable();
         }
-        this.validateInputs();
     },
     
     // Update weight summary display
@@ -266,37 +265,7 @@ window.PortfolioManager = {
         headerRow.innerHTML = headerContent;
     },
     
-    // Validate inputs and enable/disable add button
-    validateInputs() {
-        const tickerInput = document.getElementById('tickerInput');
-        const weightInput = document.getElementById('weightInput');
-        const addTickerBtn = document.getElementById('addTickerBtn');
-        
-        if (!tickerInput || !weightInput || !addTickerBtn) return;
-        
-        const ticker = tickerInput.value.trim().toUpperCase();
-        const weight = parseFloat(weightInput.value);
-        const totalWeight = this.getTotalWeight();
-        
-        const isValid = ticker.length > 0 && 
-                       ticker.length <= 10 && 
-                       !isNaN(weight) && 
-                       weight > 0 && 
-                       weight <= 100 &&
-                       (totalWeight + weight) <= 100 &&
-                       !this.portfolio.some(item => item.ticker === ticker);
-        
-        addTickerBtn.disabled = !isValid;
-        
-        // Update button appearance based on validation
-        if (isValid) {
-            addTickerBtn.style.background = 'linear-gradient(135deg, #28a745 0%, #20c997 100%)';
-            addTickerBtn.style.boxShadow = '0 4px 12px rgba(40, 167, 69, 0.3)';
-        } else {
-            addTickerBtn.style.background = 'linear-gradient(135deg, #6c757d 0%, #5a6268 100%)';
-            addTickerBtn.style.boxShadow = 'none';
-        }
-    },
+
     
     // Open edit modal
     openEditModal(index) {
@@ -748,14 +717,6 @@ document.addEventListener('DOMContentLoaded', function() {
 
 // Setup all event listeners
 function setupEventListeners() {
-    // Portfolio management event listeners
-    const addButton = document.getElementById('addTickerBtn');
-    if (addButton) {
-        addButton.addEventListener('click', () => {
-            PortfolioManager.addTickerFromUI();
-        });
-    }
-
     // Chat event listeners
     const messageInput = document.getElementById('messageInput');
     const sendButton = document.getElementById('sendButton');
@@ -786,26 +747,4 @@ function setupEventListeners() {
     // These are set up in renderPortfolioTable() when the table is rendered
 }
 
-// UI function to add ticker
-function addTickerFromUI() {
-    const tickerInput = document.getElementById('tickerInput');
-    const weightInput = document.getElementById('weightInput');
-    
-    if (!tickerInput || !weightInput) return;
-    
-    const ticker = tickerInput.value.trim();
-    const weight = weightInput.value;
-    
-    try {
-        const result = PortfolioManager.addTicker(ticker, weight);
-        
-        // Clear inputs
-        tickerInput.value = '';
-        weightInput.value = '';
-        tickerInput.focus();
-        
-        PortfolioManager.showNotification(result.message, 'success');
-    } catch (error) {
-        PortfolioManager.showNotification(error.message, 'error');
-    }
-}
+

@@ -1,0 +1,15 @@
+{
+  "bb437258-8824-4fad-a640-abefed6709df": {
+    "user_id": "anonymous",
+    "created_at": "2025-09-04T15:15:02.610045",
+    "last_accessed": "2025-09-04T15:21:21.117769",
+    "tag_configurations": {
+      "ABC": {
+        "created_at": "2025-09-04T15:21:24.256745",
+        "tags": {},
+        "ticker_count": 0
+      }
+    },
+    "portfolio_snapshots": []
+  }
+}
