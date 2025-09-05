@@ -368,6 +368,127 @@ def tag_portfolio_tickers(tag_type: str, portfolio: Dict[str, Any] = None) -> Di
         "tag_type": normalized_tag_type
     }
 
+@tool
+def edit_ticker_tag(ticker: str, tag_name: str, new_value: str, portfolio: Dict[str, Any] = None) -> Dict[str, Any]:
+    """Edit a specific tag value for a ticker in the portfolio."""
+    ticker = ticker.upper()
+    
+    # Use provided portfolio or default to empty
+    if portfolio is None:
+        portfolio = {}
+    
+    # Convert portfolio to internal format if needed
+    if isinstance(portfolio, dict) and "tickers" in portfolio:
+        # Frontend format - convert to internal
+        internal_portfolio = {}
+        for ticker_data in portfolio["tickers"]:
+            symbol = ticker_data["symbol"]
+            # Preserve the ENTIRE ticker_data structure including tags
+            if isinstance(ticker_data, dict) and len(ticker_data) > 2:
+                # Has tags - preserve the complete structure
+                internal_portfolio[symbol] = ticker_data
+            else:
+                # No tags - just store weight
+                internal_portfolio[symbol] = ticker_data["weight"]
+    else:
+        # Already internal format
+        internal_portfolio = portfolio.copy()
+    
+    # Check if ticker exists
+    if ticker not in internal_portfolio:
+        return {
+            "success": False,
+            "message": f"Ticker {ticker} not found in portfolio",
+            "portfolio": internal_portfolio,
+            "action": "edit_tag",
+            "ticker": ticker,
+            "tag_name": tag_name,
+            "new_value": new_value
+        }
+    
+    # Normalize tag name
+    normalized_tag_name = tag_name.replace(" ", "_").lower()
+    
+    # Update the tag value
+    if isinstance(internal_portfolio[ticker], dict):
+        # Has tags - update the specific tag
+        internal_portfolio[ticker][normalized_tag_name] = new_value
+        print(f"🔍 Debug: Updated {ticker}'s {normalized_tag_name} to {new_value}")
+    else:
+        # No tags yet - create tag structure
+        internal_portfolio[ticker] = {
+            "weight": internal_portfolio[ticker],
+            normalized_tag_name: new_value
+        }
+        print(f"🔍 Debug: Created tag structure for {ticker} with {normalized_tag_name} = {new_value}")
+    
+    return {
+        "success": True,
+        "message": f"Updated {ticker}'s {tag_name} to {new_value}",
+        "portfolio": internal_portfolio,
+        "action": "edit_tag",
+        "ticker": ticker,
+        "tag_name": normalized_tag_name,
+        "new_value": new_value
+    }
+
+@tool
+def bulk_edit_ticker_tags(tag_name: str, old_value: str, new_value: str, portfolio: Dict[str, Any] = None) -> Dict[str, Any]:
+    """Edit a specific tag value for all tickers that have the old value."""
+    # Use provided portfolio or default to empty
+    if portfolio is None:
+        portfolio = {}
+    
+    # Convert portfolio to internal format if needed
+    if isinstance(portfolio, dict) and "tickers" in portfolio:
+        # Frontend format - convert to internal
+        internal_portfolio = {}
+        for ticker_data in portfolio["tickers"]:
+            symbol = ticker_data["symbol"]
+            # Preserve the ENTIRE ticker_data structure including tags
+            if isinstance(ticker_data, dict) and len(ticker_data) > 2:
+                # Has tags - preserve the complete structure
+                internal_portfolio[symbol] = ticker_data
+            else:
+                # No tags - just store weight
+                internal_portfolio[symbol] = ticker_data["weight"]
+    else:
+        # Already internal format
+        internal_portfolio = portfolio.copy()
+    
+    # Normalize tag name
+    normalized_tag_name = tag_name.replace(" ", "_").lower()
+    
+    # Find and update all matching tickers
+    updated_tickers = []
+    for symbol, data in internal_portfolio.items():
+        if isinstance(data, dict) and data.get(normalized_tag_name) == old_value:
+            data[normalized_tag_name] = new_value
+            updated_tickers.append(symbol)
+            print(f"🔍 Debug: Updated {symbol}'s {normalized_tag_name} from {old_value} to {new_value}")
+    
+    if updated_tickers:
+        return {
+            "success": True,
+            "message": f"Updated {len(updated_tickers)} tickers: {', '.join(updated_tickers)}",
+            "portfolio": internal_portfolio,
+            "action": "bulk_edit_tags",
+            "tag_name": normalized_tag_name,
+            "old_value": old_value,
+            "new_value": new_value,
+            "updated_tickers": updated_tickers
+        }
+    else:
+        return {
+            "success": False,
+            "message": f"No tickers found with {tag_name} = {old_value}",
+            "portfolio": internal_portfolio,
+            "action": "bulk_edit_tags",
+            "tag_name": normalized_tag_name,
+            "old_value": old_value,
+            "new_value": new_value
+        }
+
 class PortfolioAgent:
     """Portfolio management agent using LangGraph workflow."""
     
@@ -381,7 +502,9 @@ class PortfolioAgent:
             remove_ticker_from_portfolio,
             modify_ticker_weight,
             get_portfolio_summary,
-            tag_portfolio_tickers
+            tag_portfolio_tickers,
+            edit_ticker_tag,
+            bulk_edit_ticker_tags
         ]
         
         # Create LLM with tool calling capabilities
@@ -658,6 +781,8 @@ Keep your response under 100 words and be helpful."""
 3. Modify ticker weights
 4. Show portfolio summary
 5. Tag portfolio tickers with specific categories (e.g., asset class, region, sector)
+6. Edit individual tag values for specific tickers
+7. Bulk edit tag values for multiple tickers
 
 When a user asks to:
 - Add a ticker: Use add_ticker_to_portfolio with ticker symbol and weight
@@ -665,6 +790,14 @@ When a user asks to:
 - Modify a ticker: Use modify_ticker_weight with ticker symbol and new weight
 - Show portfolio: Use get_portfolio_summary
 - Tag portfolio: Use tag_portfolio_tickers with tag_type (e.g., "asset_class", "region", "sector")
+- Edit a tag value: Use edit_ticker_tag with ticker, tag_name, and new_value
+- Bulk edit tags: Use bulk_edit_ticker_tags with tag_name, old_value, and new_value
+
+TAG EDITING EXAMPLES:
+- "Change SPY's asset class to Fixed Income" → edit_ticker_tag("SPY", "asset_class", "Fixed Income")
+- "Update AGG's instrument type to Mutual Fund" → edit_ticker_tag("AGG", "instrument_type", "Mutual Fund")
+- "Set all ETFs to Mutual Fund for instrument type" → bulk_edit_ticker_tags("instrument_type", "ETF", "Mutual Fund")
+- "Change all Equity to Fixed Income for asset class" → bulk_edit_ticker_tags("asset_class", "Equity", "Fixed Income")
 
 CRITICAL: When modifying ticker weights or rebalancing, you MUST use the modify_ticker_weight tool for each ticker change to preserve existing tags. Do NOT create new portfolio structures manually.
 

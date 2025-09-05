@@ -760,3 +760,68 @@ body {
         font-size: 12px;
     }
 }
+
+/* Editable Tag Cell Styles */
+.editable-tag-cell {
+    cursor: pointer;
+    position: relative;
+    transition: background-color 0.2s ease;
+}
+
+.editable-tag-cell:hover {
+    background-color: #f8f9fa;
+}
+
+.editable-tag-cell.editing {
+    background-color: #e3f2fd;
+}
+
+.tag-display {
+    display: inline;
+    padding: 2px 4px;
+    border-radius: 3px;
+    background-color: #f1f3f4;
+    color: #333;
+    font-size: 12px;
+}
+
+.tag-edit-input {
+    width: 100%;
+    padding: 4px 6px;
+    border: 2px solid #007bff;
+    border-radius: 3px;
+    font-size: 12px;
+    background-color: white;
+    outline: none;
+}
+
+.tag-edit-input:focus {
+    border-color: #0056b3;
+    box-shadow: 0 0 0 2px rgba(0, 123, 255, 0.25);
+}
+
+/* Tag value styling based on content */
+.editable-tag-cell[data-tag="asset_class"] .tag-display {
+    background-color: #e8f5e8;
+    color: #2e7d32;
+}
+
+.editable-tag-cell[data-tag="instrument_type"] .tag-display {
+    background-color: #e3f2fd;
+    color: #1565c0;
+}
+
+.editable-tag-cell[data-tag="sector"] .tag-display {
+    background-color: #fff3e0;
+    color: #ef6c00;
+}
+
+.editable-tag-cell[data-tag="region"] .tag-display {
+    background-color: #f3e5f5;
+    color: #7b1fa2;
+}
+
+.editable-tag-cell[data-tag="risk"] .tag-display {
+    background-color: #ffebee;
+    color: #c62828;
+}

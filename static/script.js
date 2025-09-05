@@ -233,7 +233,10 @@ window.PortfolioManager = {
             if (this.availableTags && this.availableTags.length > 0) {
                 this.availableTags.forEach(tag => {
                     const tagValue = item[tag] || 'N/A';
-                    rowContent += `<td>${tagValue}</td>`;
+                    rowContent += `<td class="editable-tag-cell" data-ticker="${item.ticker}" data-tag="${tag}" data-original-value="${tagValue}">
+                        <span class="tag-display">${tagValue}</span>
+                        <input type="text" class="tag-edit-input" value="${tagValue}" style="display: none;" />
+                    </td>`;
                 });
             }
             
@@ -248,6 +251,9 @@ window.PortfolioManager = {
             row.innerHTML = rowContent;
             portfolioTableBody.appendChild(row);
         });
+        
+        // Enable tag editing after table is rendered
+        this.enableTagEditing();
     },
     
     // Update table header with dynamic tag columns
@@ -772,6 +778,92 @@ window.PortfolioManager = {
         
         this.showNotification(`Tag definition for '${tagName}' updated`, 'success');
         console.log('✅ Tag definition set:', tagName, cleanValues);
+    },
+
+    // Tag Value Editing Functions
+    enableTagEditing() {
+        // Add click handlers to all editable tag cells
+        const editableCells = document.querySelectorAll('.editable-tag-cell');
+        editableCells.forEach(cell => {
+            cell.addEventListener('click', this.handleTagCellClick.bind(this));
+        });
+    },
+
+    handleTagCellClick(event) {
+        const cell = event.currentTarget;
+        const displaySpan = cell.querySelector('.tag-display');
+        const inputField = cell.querySelector('.tag-edit-input');
+        
+        // Hide display span and show input field
+        displaySpan.style.display = 'none';
+        inputField.style.display = 'block';
+        inputField.focus();
+        inputField.select();
+        
+        // Add event listeners for save/cancel
+        inputField.addEventListener('blur', this.handleTagEditBlur.bind(this));
+        inputField.addEventListener('keydown', this.handleTagEditKeydown.bind(this));
+    },
+
+    handleTagEditBlur(event) {
+        this.saveTagEdit(event.target);
+    },
+
+    handleTagEditKeydown(event) {
+        if (event.key === 'Enter') {
+            event.preventDefault();
+            this.saveTagEdit(event.target);
+        } else if (event.key === 'Escape') {
+            event.preventDefault();
+            this.cancelTagEdit(event.target);
+        }
+    },
+
+    saveTagEdit(inputField) {
+        const cell = inputField.closest('.editable-tag-cell');
+        const displaySpan = cell.querySelector('.tag-display');
+        const ticker = cell.dataset.ticker;
+        const tag = cell.dataset.tag;
+        const newValue = inputField.value.trim();
+        const originalValue = cell.dataset.originalValue;
+        
+        // Update the portfolio data
+        const tickerIndex = this.portfolio.findIndex(item => item.ticker === ticker);
+        if (tickerIndex !== -1) {
+            this.portfolio[tickerIndex][tag] = newValue || 'N/A';
+            this.savePortfolio();
+            
+            // Update display
+            displaySpan.textContent = newValue || 'N/A';
+            cell.dataset.originalValue = newValue || 'N/A';
+            
+            this.showNotification(`Updated ${tag} for ${ticker} to "${newValue || 'N/A'}"`, 'success');
+        }
+        
+        // Hide input and show display
+        inputField.style.display = 'none';
+        displaySpan.style.display = 'inline';
+        
+        // Remove event listeners
+        inputField.removeEventListener('blur', this.handleTagEditBlur.bind(this));
+        inputField.removeEventListener('keydown', this.handleTagEditKeydown.bind(this));
+    },
+
+    cancelTagEdit(inputField) {
+        const cell = inputField.closest('.editable-tag-cell');
+        const displaySpan = cell.querySelector('.tag-display');
+        const originalValue = cell.dataset.originalValue;
+        
+        // Restore original value
+        inputField.value = originalValue;
+        
+        // Hide input and show display
+        inputField.style.display = 'none';
+        displaySpan.style.display = 'inline';
+        
+        // Remove event listeners
+        inputField.removeEventListener('blur', this.handleTagEditBlur.bind(this));
+        inputField.removeEventListener('keydown', this.handleTagEditKeydown.bind(this));
     },
 
     getTagDefinition(tagName) {
