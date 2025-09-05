@@ -387,7 +387,6 @@ class PortfolioAgent:
         # Create LLM with tool calling capabilities
         self.llm = ChatOpenAI(
             model=model_name,
-            temperature=0.1,
             openai_api_key=os.getenv("OPENAI_API_KEY")
         )
         
@@ -431,19 +430,21 @@ Return ONLY a JSON object with ticker symbols as keys and classifications as val
 
 No explanations, just the JSON object."""
             else:
-                # Use free-form classification
+                # Use free-form classification with clear, context-aware instructions
                 classification_prompt = f"""You are a financial expert. Classify the following ticker symbols by their {tag_type}.
 
 Ticker symbols: {', '.join(ticker_symbols)}
 
-For each ticker, provide the most appropriate {tag_type} classification. Use common financial knowledge.
+IMPORTANT: The tag type is "{tag_type}". Cl assify each ticker according to this specific classification type, not by any other criteria.
 
-Return ONLY a JSON object with ticker symbols as keys and classifications as values. Example:  
-{{
-    "SPY": "Equity",
-    "BND": "Fixed Income",
-    "VTI": "Equity"
-}}
+For example:
+- If {tag_type} is "asset_class", classify as Equity, Fixed Income, Alternative Investments, etc. like {{"SPY": "Equity", "BND": "Fixed Income", "VTI": "Equity"}}
+- If {tag_type} is "instrument_type", classify as ETF, Mutual Fund, Stock, Bond, REIT, etc.
+- If {tag_type} is "sector", classify as Technology, Healthcare, Financial Services, etc.
+- If {tag_type} is "region", classify as US, Europe, Asia-Pacific, etc.
+- If {tag_type} is "risk", classify as Low, Moderate, High, Very High, etc.
+
+Return ONLY a JSON object with ticker symbols as keys and classifications as values.
 
 No explanations, just the JSON object."""
             
