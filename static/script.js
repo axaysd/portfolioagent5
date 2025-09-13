@@ -24,6 +24,9 @@ window.PortfolioManager = {
         // Create sample configuration if none exist
         this.createSampleConfigurationIfNeeded();
         
+        // Clean up any duplicate sample configurations
+        this.cleanupDuplicateSamples();
+        
         this.updateUI();
         this.updateWeightSummary();
     },
@@ -672,7 +675,10 @@ window.PortfolioManager = {
     // Create sample configuration if none exist
     createSampleConfigurationIfNeeded() {
         const existingConfigs = this.getSavedTagConfigurations();
-        if (existingConfigs.length === 0) {
+        console.log('🔍 Debug: Existing configurations:', existingConfigs);
+        
+        // Only create sample if no configurations exist AND no sample already exists
+        if (existingConfigs.length === 0 || !existingConfigs.some(config => config.name === 'Sample Portfolio Tags')) {
             console.log('🔍 Creating sample tag configuration...');
             const sampleConfig = {
                 name: 'Sample Portfolio Tags',
@@ -685,9 +691,26 @@ window.PortfolioManager = {
                 session_id: this.sessionId
             };
             
-            const configs = [sampleConfig];
+            const configs = existingConfigs.length === 0 ? [sampleConfig] : [...existingConfigs, sampleConfig];
             localStorage.setItem('portfolio_tag_configs', JSON.stringify(configs));
             console.log('✅ Sample configuration created:', sampleConfig);
+        } else {
+            console.log('🔍 Sample configuration already exists or other configurations found');
+        }
+    },
+
+    // Clean up duplicate sample configurations
+    cleanupDuplicateSamples() {
+        const configs = this.getSavedTagConfigurations();
+        const sampleConfigs = configs.filter(config => config.name === 'Sample Portfolio Tags');
+        
+        if (sampleConfigs.length > 1) {
+            console.log('🔍 Found duplicate sample configurations, cleaning up...');
+            // Keep only the first sample config and remove duplicates
+            const nonSampleConfigs = configs.filter(config => config.name !== 'Sample Portfolio Tags');
+            const cleanedConfigs = [...nonSampleConfigs, sampleConfigs[0]];
+            localStorage.setItem('portfolio_tag_configs', JSON.stringify(cleanedConfigs));
+            console.log('✅ Duplicate sample configurations removed');
         }
     },
 
@@ -710,6 +733,12 @@ window.PortfolioManager = {
         }
         
         // Create new configuration
+        console.log('🔍 Saving configuration with current state:');
+        console.log('🔍 Available tags:', this.availableTags);
+        console.log('🔍 Tag definitions:', this.tagDefinitions);
+        console.log('🔍 Tag definitions type:', typeof this.tagDefinitions);
+        console.log('🔍 Tag definitions keys:', Object.keys(this.tagDefinitions));
+        
         const newConfig = {
             name: configNameClean,
             tags: [...this.availableTags],
@@ -717,6 +746,9 @@ window.PortfolioManager = {
             created_at: new Date().toISOString(),
             session_id: this.sessionId
         };
+        
+        console.log('🔍 New config being saved:', newConfig);
+        console.log('🔍 New config tagDefinitions:', newConfig.tagDefinitions);
         
         // Add to saved configurations
         savedConfigs.push(newConfig);
@@ -730,16 +762,34 @@ window.PortfolioManager = {
 
     loadTagConfiguration(configName) {
         const savedConfigs = this.getSavedTagConfigurations();
+        console.log('🔍 Debug: All saved configurations:', savedConfigs);
+        console.log('🔍 Debug: Looking for configuration:', configName);
+        
         const config = savedConfigs.find(c => c.name === configName);
+        console.log('🔍 Debug: Found config:', config);
         
         if (!config) {
             this.showNotification('Configuration not found', 'error');
             return;
         }
         
+        // Fix configuration if it has tag definitions but empty tags array
+        if (config.tagDefinitions && Object.keys(config.tagDefinitions).length > 0 && config.tags.length === 0) {
+            console.log('🔍 Debug: Fixing configuration with empty tags array');
+            config.tags = Object.keys(config.tagDefinitions);
+            
+            // Update the saved configuration
+            const updatedConfigs = savedConfigs.map(c => c.name === configName ? config : c);
+            localStorage.setItem('portfolio_tag_configs', JSON.stringify(updatedConfigs));
+            console.log('🔍 Debug: Updated configuration with tags:', config.tags);
+        }
+        
         // Replace current tags and definitions with loaded configuration
         this.availableTags = [...config.tags];
         this.tagDefinitions = {...(config.tagDefinitions || {})};
+        
+        console.log('🔍 Debug: Loaded tag definitions:', this.tagDefinitions);
+        console.log('🔍 Debug: Available tags:', this.availableTags);
         
         // Update UI
         this.updateUI();
@@ -751,6 +801,8 @@ window.PortfolioManager = {
         // Show tag definitions in chat
         const tagDefinitions = this.getAllTagDefinitions();
         const definedTags = Object.keys(tagDefinitions);
+        console.log('🔍 Debug: In loadTagConfiguration, tagDefinitions:', tagDefinitions);
+        console.log('🔍 Debug: In loadTagConfiguration, definedTags:', definedTags);
         if (definedTags.length > 0) {
             let definitionMessage = `🏷️ Tag definitions loaded:`;
             definedTags.forEach(tag => {
@@ -758,6 +810,8 @@ window.PortfolioManager = {
                 definitionMessage += `\n• ${tag}: ${values}`;
             });
             window.ChatManager.addMessage(definitionMessage, false);
+        } else {
+            console.log('🔍 Debug: No tag definitions found in loadTagConfiguration');
         }
         
         // If there are existing tickers, ask AI to populate tag values
@@ -768,8 +822,8 @@ window.PortfolioManager = {
             // Include tag definitions in the message
             let message = `I've loaded the tag configuration "${configName}" with tags: ${tagList}.`;
             
-            // Add tag definitions if available
-            const tagDefinitions = this.getAllTagDefinitions();
+            // Add tag definitions if available - use the config directly to ensure we have the data
+            const tagDefinitions = config.tagDefinitions || {};
             const definedTags = Object.keys(tagDefinitions);
             if (definedTags.length > 0) {
                 message += `\n\nTag definitions:`;
@@ -916,6 +970,9 @@ window.PortfolioManager = {
     },
 
     getAllTagDefinitions() {
+        console.log('🔍 Debug: getAllTagDefinitions called, returning:', this.tagDefinitions);
+        console.log('🔍 Debug: tagDefinitions type:', typeof this.tagDefinitions);
+        console.log('🔍 Debug: tagDefinitions keys:', Object.keys(this.tagDefinitions));
         return this.tagDefinitions;
     },
 
@@ -947,6 +1004,12 @@ window.PortfolioManager = {
             
             if (values.length > 0) {
                 this.setTagDefinition(tagName, values);
+                
+                // Also add the tag to availableTags if not already present
+                if (!this.availableTags.includes(tagName)) {
+                    this.availableTags.push(tagName);
+                    this.savePortfolio();
+                }
                 
                 // Show notification
                 this.showNotification(`Tag definition for '${tagName}' updated: ${values.join(', ')}`);
@@ -1042,6 +1105,8 @@ window.TagConfigManager = {
             const hasDefinitions = Object.keys(tagDefinitions).length > 0;
             const definitionText = hasDefinitions ? ' • With definitions' : '';
             
+            console.log('🔍 Displaying config:', config.name, 'tags:', config.tags, 'definitions:', tagDefinitions);
+            
             return `
                 <div class="saved-config-item" data-config-name="${config.name}">
                     <div class="config-name">${config.name}</div>
@@ -1073,7 +1138,7 @@ window.TagConfigManager = {
                 const tagList = config.tags.join(', ');
                 let message = `📋 Tag configuration "${this.selectedConfig}" loaded with tags: ${tagList}.`;
                 
-                // Show tag definitions if available
+                // Show tag definitions if available - use the config directly to ensure we have the data
                 const tagDefinitions = config.tagDefinitions || {};
                 const definedTags = Object.keys(tagDefinitions);
                 if (definedTags.length > 0) {
@@ -1145,6 +1210,10 @@ window.ChatManager = {
             document.getElementById('chatMessages').appendChild(loadingDiv);
             
             // Send to LangGraph backend
+            const tagDefinitions = window.PortfolioManager.getAllTagDefinitions();
+            console.log('🔍 Debug: Sending tag definitions to AI:', tagDefinitions);
+            console.log('🔍 Debug: Available tags being sent:', window.PortfolioManager.availableTags);
+            
             const response = await fetch('/api/chat', {
                 method: 'POST',
                 headers: {
@@ -1154,7 +1223,7 @@ window.ChatManager = {
                     message: message,
                     portfolio: portfolio,
                     available_tags: window.PortfolioManager.availableTags,
-                    tag_definitions: window.PortfolioManager.getAllTagDefinitions(),
+                    tag_definitions: tagDefinitions,
                     conversation_history: this.conversationHistory
                 })
             });
