@@ -60,6 +60,7 @@ async def chat_endpoint(request: Dict[str, Any]):
         portfolio = request.get("portfolio", {})
         available_tags = request.get("available_tags", [])
         tag_definitions = request.get("tag_definitions", {})
+        conversation_history = request.get("conversation_history", [])
         
         if not user_message:
             raise HTTPException(status_code=400, detail="Message is required")
@@ -68,9 +69,16 @@ async def chat_endpoint(request: Dict[str, Any]):
         print(f"🔍 Debug: Portfolio: {portfolio}")
         print(f"🔍 Debug: Available tags: {available_tags}")
         print(f"🔍 Debug: Tag definitions: {tag_definitions}")
+        print(f"🔍 Debug: Conversation history: {conversation_history}")
+        
+        # Debug tag definitions structure
+        if tag_definitions:
+            print(f"🔍 Debug: Tag definitions keys: {list(tag_definitions.keys())}")
+            for key, values in tag_definitions.items():
+                print(f"🔍 Debug: {key}: {values}")
         
         # Get response from LangGraph agent
-        agent_response = chat_with_portfolio_agent(user_message, portfolio, available_tags, tag_definitions)
+        agent_response = chat_with_portfolio_agent(user_message, portfolio, available_tags, tag_definitions, conversation_history)
         
         print(f"🔍 Debug: LangGraph response: {agent_response['response']}")
         print(f"🔍 Debug: LangGraph portfolio state: {agent_response['portfolio_state']}")
@@ -81,6 +89,8 @@ async def chat_endpoint(request: Dict[str, Any]):
             "response": agent_response['response'],
             "portfolio": agent_response['portfolio_state'],  # Return updated portfolio state
             "changes": agent_response['changes'],  # Return what changed
+            "available_tags": available_tags,  # Return available tags
+            "tag_definitions": tag_definitions,  # Return tag definitions
             "model_info": get_model_info()
         }
         

@@ -20,6 +20,10 @@ window.PortfolioManager = {
             this.availableTags = savedData.tags || []; // Load available tags
             this.tagDefinitions = savedData.tagDefinitions || {}; // Load tag definitions
         }
+        
+        // Create sample configuration if none exist
+        this.createSampleConfigurationIfNeeded();
+        
         this.updateUI();
         this.updateWeightSummary();
     },
@@ -232,7 +236,11 @@ window.PortfolioManager = {
             // Add tag columns if they exist
             if (this.availableTags && this.availableTags.length > 0) {
                 this.availableTags.forEach(tag => {
-                    const tagValue = item[tag] || 'N/A';
+                    let tagValue = item[tag] || 'N/A';
+                    // Ensure tag value is a string (handle objects/arrays)
+                    if (typeof tagValue === 'object' && tagValue !== null) {
+                        tagValue = JSON.stringify(tagValue);
+                    }
                     rowContent += `<td class="editable-tag-cell" data-ticker="${item.ticker}" data-tag="${tag}" data-original-value="${tagValue}">
                         <span class="tag-display">${tagValue}</span>
                         <input type="text" class="tag-edit-input" value="${tagValue}" style="display: none;" />
@@ -661,6 +669,28 @@ window.PortfolioManager = {
         console.log('✅ New session started:', this.sessionId);
     },
 
+    // Create sample configuration if none exist
+    createSampleConfigurationIfNeeded() {
+        const existingConfigs = this.getSavedTagConfigurations();
+        if (existingConfigs.length === 0) {
+            console.log('🔍 Creating sample tag configuration...');
+            const sampleConfig = {
+                name: 'Sample Portfolio Tags',
+                tags: ['asset_class', 'region'],
+                tagDefinitions: {
+                    'asset_class': ['Equity', 'Fixed Income', 'Alternative', 'Cash'],
+                    'region': ['North America', 'Europe', 'Asia', 'Emerging Markets', 'Global']
+                },
+                created_at: new Date().toISOString(),
+                session_id: this.sessionId
+            };
+            
+            const configs = [sampleConfig];
+            localStorage.setItem('portfolio_tag_configs', JSON.stringify(configs));
+            console.log('✅ Sample configuration created:', sampleConfig);
+        }
+    },
+
     // Tag Configuration Management
     saveTagConfiguration(configName) {
         if (!configName || configName.trim() === '') {
@@ -734,7 +764,22 @@ window.PortfolioManager = {
         if (this.portfolio.length > 0 && this.availableTags.length > 0) {
             const tickerList = this.portfolio.map(item => item.ticker).join(', ');
             const tagList = this.availableTags.join(', ');
-            const message = `I've loaded the tag configuration "${configName}" with tags: ${tagList}. Please populate the appropriate values for these tags for my existing tickers: ${tickerList}.`;
+            
+            // Include tag definitions in the message
+            let message = `I've loaded the tag configuration "${configName}" with tags: ${tagList}.`;
+            
+            // Add tag definitions if available
+            const tagDefinitions = this.getAllTagDefinitions();
+            const definedTags = Object.keys(tagDefinitions);
+            if (definedTags.length > 0) {
+                message += `\n\nTag definitions:`;
+                definedTags.forEach(tag => {
+                    const values = tagDefinitions[tag].join(', ');
+                    message += `\n• ${tag}: ${values}`;
+                });
+            }
+            
+            message += `\n\nPlease populate the appropriate values for these tags for my existing tickers: ${tickerList}.`;
             
             // Add a small delay to ensure UI is updated first
             setTimeout(() => {
@@ -766,7 +811,7 @@ window.PortfolioManager = {
         }
         
         // Clean and validate values
-        const cleanValues = values.map(v => v.trim().toLowerCase()).filter(v => v.length > 0);
+        const cleanValues = values.map(v => v.trim()).filter(v => v.length > 0);
         
         if (cleanValues.length === 0) {
             this.showNotification('No valid values provided', 'error');
@@ -943,12 +988,15 @@ window.TagConfigManager = {
     },
 
     openLoadModal() {
+        console.log('🔍 Opening load modal...');
         this.currentMode = 'load';
         const modal = document.getElementById('tagConfigModal');
         const title = document.getElementById('tagConfigTitle');
         const saveContent = document.getElementById('saveTagConfigContent');
         const loadContent = document.getElementById('loadTagConfigContent');
         const savedConfigsList = document.getElementById('savedConfigsList');
+
+        console.log('🔍 Modal elements found:', { modal, title, saveContent, loadContent, savedConfigsList });
 
         title.textContent = 'Load Tag Configuration';
         saveContent.style.display = 'none';
@@ -958,6 +1006,7 @@ window.TagConfigManager = {
         this.displaySavedConfigurations(savedConfigsList);
         
         modal.classList.add('show');
+        console.log('🔍 Modal should now be visible');
     },
 
     displayCurrentTags(container) {
@@ -977,9 +1026,12 @@ window.TagConfigManager = {
     },
 
     displaySavedConfigurations(container) {
+        console.log('🔍 Displaying saved configurations...');
         const configs = window.PortfolioManager.getSavedTagConfigurations();
+        console.log('🔍 Found configurations:', configs);
         
         if (configs.length === 0) {
+            console.log('🔍 No configurations found, showing empty message');
             container.innerHTML = '<p style="color: #6c757d; font-style: italic;">No saved configurations found</p>';
             return;
         }
@@ -1043,10 +1095,20 @@ window.TagConfigManager = {
 
 // Chat Manager for LangGraph AI Integration
 window.ChatManager = {
+    // Conversation history storage
+    conversationHistory: [],
+    
     // Add a message to the chat
     addMessage(content, isUser = false) {
         const chatMessages = document.getElementById('chatMessages');
         if (!chatMessages) return;
+        
+        // Store in conversation history
+        this.conversationHistory.push({
+            content: content,
+            isUser: isUser,
+            timestamp: new Date().toISOString()
+        });
         
         const messageDiv = document.createElement('div');
         messageDiv.className = `message ${isUser ? 'user-message' : 'bot-message'}`;
@@ -1092,7 +1154,8 @@ window.ChatManager = {
                     message: message,
                     portfolio: portfolio,
                     available_tags: window.PortfolioManager.availableTags,
-                    tag_definitions: window.PortfolioManager.getAllTagDefinitions()
+                    tag_definitions: window.PortfolioManager.getAllTagDefinitions(),
+                    conversation_history: this.conversationHistory
                 })
             });
             
@@ -1113,6 +1176,17 @@ window.ChatManager = {
                 if (data.portfolio) {
                     window.PortfolioManager.updatePortfolioFromStructuredData(data.portfolio);
                 }
+                
+                // Update available tags and tag definitions from backend
+                if (data.available_tags) {
+                    window.PortfolioManager.availableTags = data.available_tags;
+                }
+                if (data.tag_definitions) {
+                    window.PortfolioManager.tagDefinitions = data.tag_definitions;
+                }
+                
+                // Save updated portfolio state
+                window.PortfolioManager.savePortfolio();
                 
                 // Log changes for debugging
                 if (data.changes) {
@@ -1189,8 +1263,11 @@ function setupEventListeners() {
     
     if (loadTagsBtn) {
         loadTagsBtn.addEventListener('click', () => {
+            console.log('🔍 Load tags button clicked');
             window.TagConfigManager.openLoadModal();
         });
+    } else {
+        console.log('❌ Load tags button not found');
     }
 
     // Tag configuration modal event listeners

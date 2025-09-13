@@ -519,7 +519,7 @@ class PortfolioAgent:
         # Build the LangGraph workflow
         self.graph = self._build_graph()
     
-    def _classify_tickers_with_ai(self, tag_type: str, ticker_data: List[Dict], internal_portfolio: Dict[str, Any], tag_definitions: Dict[str, List[str]] = None) -> Dict[str, Any]:
+    def _classify_tickers_with_ai(self, tag_type: str, ticker_data: List[Dict], internal_portfolio: Dict[str, Any], tag_definitions: Dict[str, List[str]] = None, user_message: str = None) -> Dict[str, Any]:
         """Use AI to classify tickers based on the requested tag type."""
         try:
             print(f"🔍 Debug: _classify_tickers_with_ai called with tag_type: {tag_type}")
@@ -530,42 +530,45 @@ class PortfolioAgent:
             # Extract ticker symbols for classification
             ticker_symbols = [ticker["symbol"] for ticker in ticker_data]
             
-            # Get allowed values for this tag type
-            allowed_values = tag_definitions.get(tag_type, []) if tag_definitions else []
+            # Note: We no longer use predefined tag definitions for classification
+            # The AI will follow the user's natural language instructions directly
+            print(f"🔍 Debug: Using free-form classification for tag_type '{tag_type}'")
+            print(f"🔍 Debug: Available tag_definitions: {tag_definitions}")
             
-            # Create classification prompt
+            # Create classification prompt - use loaded tag definitions if available
+            allowed_values = tag_definitions.get(tag_type, []) if tag_definitions else []
+            print(f"🔍 Debug: Looking for tag_type '{tag_type}' in tag_definitions: {tag_definitions}")
+            print(f"🔍 Debug: Found allowed_values: {allowed_values}")
+            
             if allowed_values:
-                # Use constrained classification with predefined values
+                # Use the loaded tag definitions
                 classification_prompt = f"""You are a financial expert. Classify the following ticker symbols by their {tag_type}.
 
 Ticker symbols: {', '.join(ticker_symbols)}
 
-IMPORTANT: You must classify each ticker using ONLY one of these predefined values: {', '.join(allowed_values)}
+IMPORTANT: Use ONLY these predefined values: {', '.join(allowed_values)}
 
-For each ticker, provide the most appropriate {tag_type} classification from the allowed values above.
+Return ONLY a JSON object with ticker symbols as keys and classifications as values.
 
-Return ONLY a JSON object with ticker symbols as keys and classifications as values. Example:  
-{{
-    "SPY": "{allowed_values[0] if allowed_values else 'Equity'}",
-    "BND": "{allowed_values[1] if len(allowed_values) > 1 else 'Fixed Income'}",
-    "VTI": "{allowed_values[0] if allowed_values else 'Equity'}"
-}}
+No explanations, just the JSON object."""
+            elif user_message:
+                # Use user's specific instruction if no predefined values
+                classification_prompt = f"""You are a financial expert. Classify the following ticker symbols by their {tag_type}.
+
+Ticker symbols: {', '.join(ticker_symbols)}
+
+User's request: "{user_message}"
+
+IMPORTANT: Use ONLY the classification values specified by the user in their request. If the user mentions specific categories like "North America vs. Non-North America", use exactly those categories.
+
+Return ONLY a JSON object with ticker symbols as keys and classifications as values.
 
 No explanations, just the JSON object."""
             else:
-                # Use free-form classification with clear, context-aware instructions
+                # General classification
                 classification_prompt = f"""You are a financial expert. Classify the following ticker symbols by their {tag_type}.
 
 Ticker symbols: {', '.join(ticker_symbols)}
-
-IMPORTANT: The tag type is "{tag_type}". Cl assify each ticker according to this specific classification type, not by any other criteria.
-
-For example:
-- If {tag_type} is "asset_class", classify as Equity, Fixed Income, Alternative Investments, etc. like {{"SPY": "Equity", "BND": "Fixed Income", "VTI": "Equity"}}
-- If {tag_type} is "instrument_type", classify as ETF, Mutual Fund, Stock, Bond, REIT, etc.
-- If {tag_type} is "sector", classify as Technology, Healthcare, Financial Services, etc.
-- If {tag_type} is "region", classify as US, Europe, Asia-Pacific, etc.
-- If {tag_type} is "risk", classify as Low, Moderate, High, Very High, etc.
 
 Return ONLY a JSON object with ticker symbols as keys and classifications as values.
 
@@ -674,7 +677,11 @@ No explanations, just the JSON object."""
                         # Add all tag properties
                         for key, value in data.items():
                             if key not in ["weight"]:
-                                ticker_info[key] = value
+                                # Ensure tag values are converted to strings
+                                if isinstance(value, (dict, list)):
+                                    ticker_info[key] = str(value)
+                                else:
+                                    ticker_info[key] = value
                                 available_tags.add(key)
                         tickers.append(ticker_info)
                         # Ensure weight is converted to float
@@ -773,7 +780,6 @@ Keep your response under 100 words and be helpful."""
                     tag_info += "\nTag definitions:"
                     for tag, values in tag_definitions.items():
                         tag_info += f"\n- {tag}: {', '.join(values)}"
-                    tag_info += "\n\nWhen classifying tickers, you MUST use only the predefined values for each tag type."
             
             system_prompt = f"""You are a portfolio management assistant. You can:
 1. Add new tickers with weights
@@ -789,7 +795,7 @@ When a user asks to:
 - Remove a ticker: Use remove_ticker_from_portfolio with ticker symbol
 - Modify a ticker: Use modify_ticker_weight with ticker symbol and new weight
 - Show portfolio: Use get_portfolio_summary
-- Tag portfolio: Use tag_portfolio_tickers with tag_type (e.g., "asset_class", "region", "sector")
+- Tag portfolio: Use tag_portfolio_tickers with tag_type (e.g., "asset_class", "region", "sector"). If user specifies definitions like "US vs. Non-US" or "NAM vs. Non-NAM", the AI classification must use those values.
 - Edit a tag value: Use edit_ticker_tag with ticker, tag_name, and new_value
 - Bulk edit tags: Use bulk_edit_ticker_tags with tag_name, old_value, and new_value
 
@@ -798,6 +804,8 @@ TAG EDITING EXAMPLES:
 - "Update AGG's instrument type to Mutual Fund" → edit_ticker_tag("AGG", "instrument_type", "Mutual Fund")
 - "Set all ETFs to Mutual Fund for instrument type" → bulk_edit_ticker_tags("instrument_type", "ETF", "Mutual Fund")
 - "Change all Equity to Fixed Income for asset class" → bulk_edit_ticker_tags("asset_class", "Equity", "Fixed Income")
+- "Tag region along US vs. Non-US" → tag_portfolio_tickers("region") [AI will use US/Non-US from user message]
+- "Tag region along NAM vs. Non-NAM" → tag_portfolio_tickers("region") [AI will use NAM/Non-NAM from user message]
 
 CRITICAL: When modifying ticker weights or rebalancing, you MUST use the modify_ticker_weight tool for each ticker change to preserve existing tags. Do NOT create new portfolio structures manually.
 
@@ -808,9 +816,13 @@ REBALANCING RULE: If a user asks to "rebalance" or "modify and rebalance", you M
 
 Always ensure the total portfolio weight doesn't exceed 100%. If a request would exceed this limit, explain why it can't be done.
 
-Current portfolio: {portfolio}{tag_info}
+CURRENT PORTFOLIO STATE: {portfolio}{tag_info}
 
-IMPORTANT: Each tool call will automatically receive the current portfolio state with all existing tags and modifications. You only need to provide the specific parameters (ticker, weight, tag_type). The portfolio state is maintained between tool calls.
+IMPORTANT: 
+- Use ONLY the current portfolio state shown above. Do NOT infer holdings from conversation history.
+- Each tool call will automatically receive the current portfolio state with all existing tags and modifications.
+- You only need to provide the specific parameters (ticker, weight, tag_type).
+- The portfolio state is maintained between tool calls.
 
 Respond naturally and call the appropriate tool when needed."""
             
@@ -882,11 +894,19 @@ Respond naturally and call the appropriate tool when needed."""
                                 # Get tag definitions from state
                                 tag_definitions = state.get("tag_definitions", {})
                                 
+                                # Get the most recent user message (should be the current tagging request)
+                                user_message = ""
+                                for msg in reversed(messages):
+                                    if hasattr(msg, 'content') and isinstance(msg, HumanMessage):
+                                        user_message = msg.content
+                                        break
+                                
                                 updated_portfolio = self._classify_tickers_with_ai(
                                     tag_type,
                                     ticker_data,
                                     updated_portfolio,
-                                    tag_definitions
+                                    tag_definitions,
+                                    user_message
                                 )
                                 print(f"🔍 Debug: AI classification result: {updated_portfolio}")
                         
@@ -941,7 +961,7 @@ Respond naturally and call the appropriate tool when needed."""
         # Compile the graph
         return builder.compile()
     
-    def chat(self, user_message: str, portfolio: Dict[str, Any] = None, available_tags: List[str] = None, tag_definitions: Dict[str, List[str]] = None) -> Dict[str, Any]:
+    def chat(self, user_message: str, portfolio: Dict[str, Any] = None, available_tags: List[str] = None, tag_definitions: Dict[str, List[str]] = None, conversation_history: List[Dict] = None) -> Dict[str, Any]:
         """Main chat method that uses the LangGraph workflow."""
         try:
             # Convert frontend portfolio to internal format
@@ -963,9 +983,21 @@ Respond naturally and call the appropriate tool when needed."""
             print(f"🔍 Debug: Available tags: {available_tags}")
             print(f"🔍 Debug: Tag definitions: {tag_definitions}")
             
+            # Build message history from conversation history
+            messages = []
+            if conversation_history:
+                for msg in conversation_history:
+                    if msg.get('isUser', False):
+                        messages.append(HumanMessage(content=msg['content']))
+                    else:
+                        messages.append(AIMessage(content=msg['content']))
+            
+            # Add current user message
+            messages.append(HumanMessage(content=user_message))
+            
             # Prepare initial state for LangGraph with all required fields
             initial_state = {
-                "messages": [HumanMessage(content=user_message)],
+                "messages": messages,
                 "portfolio": internal_portfolio,
                 "current_tool_results": [],
                 "needs_final_response": False,
@@ -1020,7 +1052,7 @@ Respond naturally and call the appropriate tool when needed."""
 portfolio_agent = PortfolioAgent()
 
 # Export the main function for external use
-def chat_with_portfolio_agent(user_message: str, portfolio: Dict[str, Any] = None, available_tags: List[str] = None, tag_definitions: Dict[str, List[str]] = None) -> Dict[str, Any]:
+def chat_with_portfolio_agent(user_message: str, portfolio: Dict[str, Any] = None, available_tags: List[str] = None, tag_definitions: Dict[str, List[str]] = None, conversation_history: List[Dict] = None) -> Dict[str, Any]:
     """
     Convenience function to chat with the portfolio agent.
     
@@ -1033,7 +1065,7 @@ def chat_with_portfolio_agent(user_message: str, portfolio: Dict[str, Any] = Non
     Returns:
         Dict containing response, portfolio_state, and changes
     """
-    return portfolio_agent.chat(user_message, portfolio, available_tags, tag_definitions)
+    return portfolio_agent.chat(user_message, portfolio, available_tags, tag_definitions, conversation_history)
 
 if __name__ == "__main__":
     # Test the agent
