@@ -295,9 +295,3 @@ A: You can edit any classification by clicking on the table cell or using chat c
 - **Tax Optimization**: Tax-loss harvesting suggestions
 - **Integration**: Connect with real brokerage accounts
 - **Reporting**: Generate detailed portfolio reports
-
----
-
-**Happy Portfolio Building! 🚀**
-
-*Built with ❤️ using AI and modern web technologies*
