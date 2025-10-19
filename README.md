@@ -1,6 +1,6 @@
 # 📊 Portfolio Management Assistant
 
-A powerful AI-powered portfolio management tool that helps you build, analyze, and manage your investment portfolio through natural language conversations.
+Built this tool (POC) for investment firms that sell model portfolios for easier and smarter onboarding of assets.
 
 ## ✨ Features
 
