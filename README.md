@@ -1,6 +1,6 @@
 # 📊 Portfolio Management Assistant
 
-Built this tool (POC) for investment firms that sell model portfolios for easier and smarter onboarding of assets.
+Built this tool (POC) for an investment firm that sell model portfolios for easier and smarter onboarding of assets.
 
 ## ✨ Features
 
