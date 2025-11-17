@@ -1,6 +1,6 @@
 # 📊 Portfolio Management Assistant
 
-Built this tool (POC) for an investment firm client that sell model portfolios for easier and smarter onboarding of assets.
+Prototype of an AI driven portfolio onboarding workflow built for an investment management client to streamline model portfolio setup, tagging, and validation. Designed to demonstrate how agentic systems can automate multi step portfolio operations with high reliability.
 
 ## ✨ Features
 
@@ -28,6 +28,10 @@ Built this tool (POC) for an investment firm client that sell model portfolios f
 - **Weight Summary**: Real-time tracking of total allocation and remaining capacity
 - **Responsive Design**: Works seamlessly on desktop and mobile devices
 
+🏢 Context
+
+This prototype was developed as part of a consulting engagement exploring how agentic systems could automate model portfolio onboarding for investment teams. It demonstrates multi step workflow orchestration, portfolio state validation, and natural language driven asset classification.
+
 ## 🚀 Quick Start
 
 ### Prerequisites
@@ -39,7 +43,7 @@ Built this tool (POC) for an investment firm client that sell model portfolios f
 1. **Clone the repository**
    ```bash
    git clone <repository-url>
-   cd portfolioagent5
+   cd model-portfolio-management
    ```
 
 2. **Install dependencies**
@@ -231,11 +235,17 @@ Built this tool (POC) for an investment firm client that sell model portfolios f
 
 ## 🛠️ **Technical Details**
 
-### 🏗️ **Architecture**
-- **Backend**: Python with FastAPI and LangGraph
-- **Frontend**: HTML, CSS, JavaScript
-- **AI Integration**: OpenAI GPT models
-- **State Management**: LocalStorage for persistence
+### 🏗️ Architecture
+
+- **Backend**: FastAPI with LangGraph for agent orchestration and portfolio state handling
+
+- **Frontend**: HTML, CSS, and JavaScript UI for interactive editing and validation
+
+- **AI**: GPT based reasoning layer for classification, tagging, and natural language commands
+
+- **State Management**: Persisted portfolio and tag state in browser
+
+- **Packaging**: Dockerfile and modular Python services for easy deployment
 
 ### 🔧 **Configuration**
 - **Model Selection**: Automatically uses the best available GPT model
